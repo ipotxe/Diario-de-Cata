@@ -1,0 +1,6 @@
+{
+  "name": "Diario del Cervecero",
+  "description": "Aplicación móvil con soporte offline (Service Worker) para registrar catas de cerveza, explorar estilos BJCP, notas de sabor y perfiles sensoriales sin conexión a internet.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

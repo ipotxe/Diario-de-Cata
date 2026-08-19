@@ -1,0 +1,21 @@
+{
+  "name": "Diario del Cervecero",
+  "short_name": "Cervecero",
+  "description": "Aplicación móvil para registrar catas de cerveza y consultar la guía de estilos BJCP offline.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#121414",
+  "theme_color": "#fbad18",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

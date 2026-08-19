@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-sans: 'Inter', sans-serif;
+    --font-serif: 'Playfair Display', serif;
+  }
+  
+  body {
+    font-family: var(--font-sans);
+    -webkit-tap-highlight-color: transparent;
+    background-color: #121414;
+    color: #e2e2e2;
+  }
+
+  h1, h2, h3, .font-serif-headline {
+    font-family: var(--font-serif);
+  }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.pt-safe {
+  padding-top: max(1rem, env(safe-area-inset-top));
+}
+
+.pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+/* Material symbol fill settings */
+.symbol-fill-1 {
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+.symbol-fill-0 {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
