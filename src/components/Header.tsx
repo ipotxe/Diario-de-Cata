@@ -25,9 +25,11 @@ export const Header: React.FC<HeaderProps> = ({
       case 'mis-catas':
         return 'Mis Catas';
       case 'estilos':
-        return 'Estilos';
+        return 'Guía Estilos';
       case 'nueva-cata':
         return 'Nueva Cata';
+      case 'insignias':
+        return 'Insignias';
       case 'perfil':
         return 'Perfil';
       default:

@@ -10,8 +10,10 @@ import { Navigation } from './components/Navigation';
 import { MisCatasView } from './components/MisCatasView';
 import { NuevaCataView } from './components/NuevaCataView';
 import { EstilosView } from './components/EstilosView';
+import { InsigniasView } from './components/InsigniasView';
 import { PerfilView } from './components/PerfilView';
 import { DetailModal } from './components/DetailModal';
+import { evaluarInsignias } from './utils/badgeEngine';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('mis-catas');
@@ -79,11 +81,16 @@ export default function App() {
     }
   }, [tastings]);
 
-  // Sync profile to LocalStorage & auto update count stats
+  // Sync profile to LocalStorage & auto update count stats and title from badges
   useEffect(() => {
     const uniqueStylesCount = new Set(tastings.map((t) => t.style)).size;
+    const currentBadges = evaluarInsignias(tastings);
+    const unlocked = currentBadges.filter((b) => b.unlocked);
+    const latestBadge = unlocked.length > 0 ? unlocked[unlocked.length - 1] : null;
+
     const updated = {
       ...userProfile,
+      title: latestBadge ? latestBadge.nombre : userProfile.title,
       stats: {
         ...userProfile.stats,
         totalCatas: tastings.length,
@@ -95,16 +102,33 @@ export default function App() {
     } catch (e) {
       console.error('Failed to save profile', e);
     }
-  }, [tastings.length]);
+  }, [tastings]);
 
   // Save or Update a Cata
   const handleSaveCata = (cata: BeerTasting) => {
+    const prevBadges = evaluarInsignias(tastings);
+    const prevUnlockedIds = new Set(prevBadges.filter((b) => b.unlocked).map((b) => b.id));
+
+    let updatedTastings: BeerTasting[];
     if (editingBeer) {
-      setTastings((prev) => prev.map((item) => (item.id === cata.id ? cata : item)));
+      updatedTastings = tastings.map((item) => (item.id === cata.id ? cata : item));
       setEditingBeer(null);
     } else {
-      setTastings((prev) => [cata, ...prev]);
+      updatedTastings = [cata, ...tastings];
     }
+    setTastings(updatedTastings);
+
+    // Check if new badges were unlocked!
+    const nextBadges = evaluarInsignias(updatedTastings);
+    const newlyUnlocked = nextBadges.filter((b) => b.unlocked && !prevUnlockedIds.has(b.id));
+
+    if (newlyUnlocked.length > 0) {
+      const names = newlyUnlocked.map((b) => `${b.icono} ${b.nombre}`).join(', ');
+      setToastMessage(`🎉 ¡Nueva Insignia Desbloqueada: ${names}!`);
+      setShowStatusToast(true);
+      setTimeout(() => setShowStatusToast(false), 5000);
+    }
+
     setActiveTab('mis-catas');
   };
 
@@ -216,11 +240,22 @@ export default function App() {
           <EstilosView onStartNewCataWithStyle={handleStartNewCataWithStyle} />
         )}
 
+        {activeTab === 'insignias' && (
+          <InsigniasView
+            tastings={tastings}
+            onStartNewCata={() => {
+              setEditingBeer(null);
+              setActiveTab('nueva-cata');
+            }}
+          />
+        )}
+
         {activeTab === 'perfil' && (
           <PerfilView
             profile={userProfile}
             tastings={tastings}
             onUpdateProfile={setUserProfile}
+            onNavigate={setActiveTab}
             onExportNotion={() => {
               const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(tastings, null, 2));
               const downloadAnchor = document.createElement('a');

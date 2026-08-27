@@ -52,6 +52,21 @@ export const Navigation: React.FC<NavigationProps> = ({ activeTab, onNavigate })
           <span className="material-symbols-outlined text-3xl font-bold">add</span>
         </button>
 
+        {/* Insignias */}
+        <button
+          onClick={() => onNavigate('insignias')}
+          className={`flex flex-col items-center justify-center gap-1 transition-all ${
+            activeTab === 'insignias'
+              ? 'text-[#fbad18] font-bold scale-105'
+              : 'text-[#d7c4ad] hover:text-[#ffd18f]'
+          }`}
+        >
+          <span className={`material-symbols-outlined text-2xl ${activeTab === 'insignias' ? 'symbol-fill-1' : ''}`}>
+            military_tech
+          </span>
+          <span className="text-[11px] font-medium tracking-wide">Insignias</span>
+        </button>
+
         {/* Perfil */}
         <button
           onClick={() => onNavigate('perfil')}

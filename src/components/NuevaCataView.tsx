@@ -17,6 +17,8 @@ import {
 } from '../data/sensoryDescriptors';
 import { INITIAL_TASTINGS } from '../data/initialData';
 import { BJCP_STYLES, BJCP_CATEGORY_GROUPS, getBJCPStyleLabel } from '../data/bjcpStyles';
+import { BarcodeScannerModal } from './BarcodeScannerModal';
+import { ScannedBeerData } from '../utils/openFoodFacts';
 
 interface NuevaCataViewProps {
   onSave: (cata: BeerTasting) => void;
@@ -125,6 +127,65 @@ export const NuevaCataView: React.FC<NuevaCataViewProps> = ({
 
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [barcodeToast, setBarcodeToast] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
+
+  const handleApplyBeerData = (data: ScannedBeerData) => {
+    let appliedCount = 0;
+
+    if (data.name) {
+      setName(data.name);
+      appliedCount++;
+    }
+    if (data.brewery) {
+      setBrewery(data.brewery);
+      appliedCount++;
+    }
+    if (data.country) {
+      setCountry(data.country);
+      appliedCount++;
+    }
+    if (data.abv !== undefined) {
+      setAbv(data.abv);
+      appliedCount++;
+    }
+    if (data.ibu !== undefined) {
+      setIbu(data.ibu);
+      appliedCount++;
+    }
+    if (data.ebc !== undefined) {
+      setEbc(data.ebc);
+      appliedCount++;
+    }
+    if (data.srm !== undefined) {
+      setSrm(data.srm);
+    }
+    if (data.style) {
+      setStyle(normalizeBJCPStyle(data.style));
+      appliedCount++;
+    }
+
+    if (data.imageUrl) {
+      setPhotos((prev) => {
+        const isDefault = prev.length === 1 && PRESET_PHOTOS.some((p) => p.url === prev[0]);
+        if (isDefault) {
+          return [data.imageUrl!];
+        }
+        return [data.imageUrl!, ...prev.filter((p) => p !== data.imageUrl)].slice(0, MAX_PHOTOS);
+      });
+      setPreviewPhotoIndex(0);
+      appliedCount++;
+    }
+
+    setBarcodeToast({
+      message: `¡Cerveza "${data.name || 'escaneada'}" importada con éxito desde Open Food Facts! (${appliedCount} campos autocompletados)`,
+      type: 'success',
+    });
+
+    setTimeout(() => {
+      setBarcodeToast(null);
+    }, 5000);
+  };
 
   const filteredCategoryGroups = useMemo(() => {
     if (!styleSearch.trim()) return BJCP_CATEGORY_GROUPS;
@@ -419,6 +480,50 @@ export const NuevaCataView: React.FC<NuevaCataViewProps> = ({
           <span className="w-2 h-2 rounded-full bg-[#fbad18] animate-pulse" />
         </div>
         <div className="flex-1 h-1 bg-[#333535] rounded-full" />
+      </div>
+
+      {/* Toast Notification for Barcode Autofill */}
+      {barcodeToast && (
+        <div className="mb-4 p-3.5 rounded-2xl bg-[#fbad18]/15 border border-[#fbad18]/40 text-[#ffd18f] text-xs flex items-center justify-between gap-2 shadow-lg animate-fade-in">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-lg text-[#7ef24a]">check_circle</span>
+            <span className="font-medium leading-tight">{barcodeToast.message}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setBarcodeToast(null)}
+            className="text-[#9f8e79] hover:text-white p-1"
+          >
+            <span className="material-symbols-outlined text-sm">close</span>
+          </button>
+        </div>
+      )}
+
+      {/* Button: Escanear Código de Barras at the top */}
+      <div className="mb-5">
+        <button
+          type="button"
+          onClick={() => setIsScannerOpen(true)}
+          className="w-full p-3.5 rounded-2xl bg-gradient-to-r from-[#282a2b] via-[#333535] to-[#282a2b] hover:from-[#3a3d3e] hover:to-[#3a3d3e] border border-[#fbad18]/40 hover:border-[#fbad18] text-[#ffd18f] shadow-md transition-all active:scale-[0.99] flex items-center justify-between group cursor-pointer"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[#fbad18]/20 border border-[#fbad18]/40 flex items-center justify-center text-[#fbad18] group-hover:scale-110 transition-transform shrink-0">
+              <span className="material-symbols-outlined text-2xl">barcode_scanner</span>
+            </div>
+            <div className="text-left">
+              <span className="block font-bold text-sm text-[#ffd18f] font-serif">
+                Escanear Código de Barras
+              </span>
+              <span className="block text-[11px] text-[#d7c4ad] font-medium">
+                Autocompletar datos con Open Food Facts
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 bg-[#121414]/80 px-2.5 py-1.5 rounded-xl border border-white/10 text-xs font-semibold text-[#fbad18]">
+            <span className="material-symbols-outlined text-base">photo_camera</span>
+            <span className="text-[11px]">Escanear</span>
+          </div>
+        </button>
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-7">
@@ -1113,6 +1218,13 @@ export const NuevaCataView: React.FC<NuevaCataViewProps> = ({
           </button>
         </div>
       </form>
+
+      {/* Barcode Scanner Camera Modal */}
+      <BarcodeScannerModal
+        isOpen={isScannerOpen}
+        onClose={() => setIsScannerOpen(false)}
+        onApplyBeerData={handleApplyBeerData}
+      />
     </div>
   );
 };

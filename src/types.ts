@@ -99,4 +99,4 @@ export interface UserProfile {
   achievements: Achievement[];
 }
 
-export type ActiveTab = 'mis-catas' | 'estilos' | 'nueva-cata' | 'perfil';
+export type ActiveTab = 'mis-catas' | 'estilos' | 'nueva-cata' | 'insignias' | 'perfil';

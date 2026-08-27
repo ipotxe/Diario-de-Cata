@@ -67,35 +67,37 @@ export const BeerCard: React.FC<BeerCardProps> = ({ beer, onClick, index = 0 }) 
       </div>
 
       {/* Info Content */}
-      <div className="flex-1 p-3.5 flex flex-col justify-between gap-1.5 min-w-0">
+      <div className="flex-1 p-3.5 flex flex-col justify-between min-w-0">
+        {/* Línea 1: Nombre principal de la cerveza */}
         <div className="flex justify-between items-start gap-2">
-          <div className="min-w-0">
-            <h3 className="font-serif text-[18px] font-bold text-[#ffd18f] truncate leading-tight group-hover:text-[#fbad18]">
-              {beer.name}
-            </h3>
-            <p className="text-xs text-[#d7c4ad] font-medium truncate mt-0.5 flex items-center gap-1">
-              <span>{beer.brewery}</span>
-              {beer.country && (
-                <>
-                  <span className="text-[#9f8e79]">•</span>
-                  <span className="text-[#9f8e79] truncate">{beer.country}</span>
-                </>
-              )}
-            </p>
-          </div>
+          <h3 className="font-serif text-[19px] font-bold text-[#ffd18f] truncate leading-tight group-hover:text-[#fbad18] min-w-0 flex-1">
+            {beer.name}
+          </h3>
           {/* SRM Indicator Dot */}
           <div
-            className="w-4 h-4 rounded-full border border-white/20 shadow-inner shrink-0 mt-1"
+            className="w-4 h-4 rounded-full border border-white/20 shadow-inner shrink-0 mt-0.5"
             style={{ backgroundColor: hexColor }}
             title={`SRM: ${beer.srm}`}
           />
         </div>
 
-        <div className="flex items-center justify-between gap-2 mt-1">
-          <span className="text-[11px] font-medium px-2 py-0.5 bg-[#1e2020] rounded border border-white/10 text-[#d7c4ad] truncate">
+        {/* Línea 2: Cervecería y País de origen */}
+        <p className="text-xs text-[#d7c4ad] font-medium truncate flex items-center gap-1 min-w-0 mt-1">
+          <span className="truncate">{beer.brewery}</span>
+          {beer.country && (
+            <>
+              <span className="text-[#9f8e79] shrink-0">•</span>
+              <span className="text-[#9f8e79] truncate">{beer.country}</span>
+            </>
+          )}
+        </p>
+
+        {/* Línea 3 / Fila inferior: Categoría y Valoración por estrellas */}
+        <div className="flex items-center justify-between gap-2 mt-2 pt-1 border-t border-white/5">
+          <span className="text-[11px] font-medium px-2 py-0.5 bg-[#1e2020] rounded border border-white/10 text-[#ffd18f] truncate max-w-[130px]">
             {beer.style}
           </span>
-          <div className="flex items-center gap-0.5">
+          <div className="flex items-center gap-0.5 shrink-0">
             {renderStars(beer.rating)}
           </div>
         </div>

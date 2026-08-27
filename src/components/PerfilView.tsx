@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
-import { UserProfile, Achievement, BeerTasting } from '../types';
+import React, { useState, useMemo } from 'react';
+import { UserProfile, BeerTasting, ActiveTab } from '../types';
 import { exportTastingsToCsv } from '../utils/exportCsv';
+import { evaluarInsignias } from '../utils/badgeEngine';
+import { ChapaBottleCap } from './ChapaBottleCap';
 
 interface PerfilViewProps {
   profile: UserProfile;
@@ -8,6 +10,7 @@ interface PerfilViewProps {
   onUpdateProfile: (updatedProfile: UserProfile) => void;
   onExportNotion?: () => void;
   onExportCsv?: () => void;
+  onNavigate?: (tab: ActiveTab) => void;
 }
 
 export const PerfilView: React.FC<PerfilViewProps> = ({
@@ -16,6 +19,7 @@ export const PerfilView: React.FC<PerfilViewProps> = ({
   onUpdateProfile,
   onExportNotion,
   onExportCsv,
+  onNavigate,
 }) => {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [isEditingModalOpen, setIsEditingModalOpen] = useState(false);
@@ -66,6 +70,31 @@ export const PerfilView: React.FC<PerfilViewProps> = ({
     );
   };
 
+  const allBadges = useMemo(() => evaluarInsignias(tastings), [tastings]);
+  const unlockedBadges = useMemo(() => allBadges.filter((b) => b.unlocked), [allBadges]);
+  const lastUnlockedBadge = useMemo(() => {
+    if (unlockedBadges.length === 0) return null;
+    return unlockedBadges[unlockedBadges.length - 1];
+  }, [unlockedBadges]);
+
+  const effectiveTitle = lastUnlockedBadge
+    ? lastUnlockedBadge.nombre
+    : (profile.title || 'Iniciado Cervecero');
+
+  const totalCatasCount = tastings.length > 0 ? tastings.length : profile.stats.totalCatas;
+  const totalEstilosCount = useMemo(() => {
+    if (tastings.length === 0) return profile.stats.totalEstilos;
+    return new Set(tastings.map((t) => t.style?.toLowerCase().trim()).filter(Boolean)).size;
+  }, [tastings, profile.stats.totalEstilos]);
+
+  const handleOpenInsignias = () => {
+    if (onNavigate) {
+      onNavigate('insignias');
+    } else {
+      triggerToast(`Tienes ${unlockedBadges.length} de ${allBadges.length} insignias desbloqueadas.`);
+    }
+  };
+
   return (
     <div className="flex flex-col w-full gap-6 pb-28 max-w-lg mx-auto animate-fade-in">
       {/* Toast Notification */}
@@ -91,21 +120,24 @@ export const PerfilView: React.FC<PerfilViewProps> = ({
                 className="w-full h-full rounded-full object-cover"
               />
             </div>
-            {profile.isPro && (
-              <div className="absolute -bottom-1 -right-1 bg-[#7ef24a] text-[#103900] px-2 py-0.5 rounded-full flex items-center gap-0.5 shadow-md border border-[#1e2020]">
-                <span className="material-symbols-outlined text-xs symbol-fill-1">verified</span>
-                <span className="text-[10px] font-bold">PRO</span>
-              </div>
-            )}
           </div>
 
           <div className="flex flex-col min-w-0">
             <h1 className="font-serif text-2xl font-bold text-[#e2e2e2] truncate">
               {profile.name}
             </h1>
-            <div className="flex items-center gap-1.5 text-[#ffd18f] mt-0.5">
-              <span className="material-symbols-outlined text-base">rewarded_ads</span>
-              <span className="text-xs font-semibold">{profile.title}</span>
+            <div className="flex items-center gap-1.5 text-[#ffd18f] mt-1 flex-wrap">
+              {lastUnlockedBadge ? (
+                <span className="text-base shrink-0 leading-none select-none">{lastUnlockedBadge.icono}</span>
+              ) : (
+                <span className="material-symbols-outlined text-base shrink-0">military_tech</span>
+              )}
+              <span className="text-xs font-bold tracking-wide text-[#ffd18f]">{effectiveTitle}</span>
+              {lastUnlockedBadge && (
+                <span className="text-[10px] px-1.5 py-0.5 bg-[#fbad18]/15 border border-[#fbad18]/30 text-[#ffd18f] rounded font-medium">
+                  Última insignia
+                </span>
+              )}
             </div>
             <p className="text-xs text-[#d7c4ad] mt-1 line-clamp-1">{profile.bio}</p>
           </div>
@@ -121,7 +153,7 @@ export const PerfilView: React.FC<PerfilViewProps> = ({
               Total Catas
             </div>
             <div className="font-serif text-2xl font-bold text-[#e2e2e2] mt-0.5">
-              {profile.stats.totalCatas}
+              {totalCatasCount}
             </div>
           </div>
         </div>
@@ -133,7 +165,7 @@ export const PerfilView: React.FC<PerfilViewProps> = ({
               Estilos
             </div>
             <div className="font-serif text-2xl font-bold text-[#e2e2e2] mt-0.5">
-              {profile.stats.totalEstilos}
+              {totalEstilosCount}
             </div>
           </div>
         </div>
@@ -149,38 +181,37 @@ export const PerfilView: React.FC<PerfilViewProps> = ({
         </div>
       </div>
 
-      {/* Achievements Section */}
+      {/* Achievements / Insignias Section */}
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between px-1">
-          <h2 className="font-serif text-2xl font-bold text-[#e2e2e2]">Logros</h2>
-          <span className="text-xs font-bold text-[#ffd18f] cursor-pointer hover:underline">
-            Ver todos
-          </span>
+          <div className="flex items-center gap-2">
+            <h2 className="font-serif text-2xl font-bold text-[#e2e2e2]">Insignias de Cata</h2>
+            <span className="px-2 py-0.5 bg-[#fbad18]/15 border border-[#fbad18]/30 text-[#ffd18f] text-[11px] font-mono font-bold rounded-md">
+              {unlockedBadges.length} / {allBadges.length}
+            </span>
+          </div>
+          <button
+            onClick={handleOpenInsignias}
+            className="text-xs font-bold text-[#ffd18f] hover:underline flex items-center gap-0.5"
+          >
+            <span>Ver todas</span>
+            <span className="material-symbols-outlined text-sm">chevron_right</span>
+          </button>
         </div>
 
         <div className="flex gap-4 overflow-x-auto pb-2 -mx-5 px-5 no-scrollbar">
-          {profile.achievements.map((ach: Achievement) => (
+          {allBadges.slice(0, 10).map((badge) => (
             <div
-              key={ach.id}
-              onClick={() => triggerToast(`Logro: ${ach.title} (${ach.unlocked ? 'Completado' : 'Bloqueado'})`)}
-              className={`flex-shrink-0 w-22 flex flex-col items-center gap-2 cursor-pointer transition-transform active:scale-95 ${
-                !ach.unlocked ? 'opacity-40 grayscale' : ''
-              }`}
+              key={badge.id}
+              onClick={handleOpenInsignias}
+              className="flex-shrink-0 w-20 flex flex-col items-center gap-1.5 cursor-pointer transition-transform active:scale-95 group"
             >
-              <div className="w-16 h-16 bg-[#333535] rounded-full flex items-center justify-center border-2 border-[#fbad18]/40 relative">
-                <span className="material-symbols-outlined text-[#ffd18f] text-3xl">
-                  {ach.icon}
-                </span>
-                {ach.unlocked && (
-                  <div className="absolute -top-1 -right-1 w-5 h-5 bg-[#7ef24a] rounded-full flex items-center justify-center border-2 border-[#1e2020]">
-                    <span className="material-symbols-outlined text-[11px] font-bold text-[#103900]">
-                      check
-                    </span>
-                  </div>
-                )}
-              </div>
-              <span className="text-xs font-medium text-center text-[#e2e2e2] leading-tight">
-                {ach.title}
+              <ChapaBottleCap insignia={badge} size={60} />
+              <span className="text-[11px] font-medium text-center text-[#e2e2e2] leading-tight line-clamp-1 group-hover:text-[#ffd18f] transition-colors">
+                {badge.nombre}
+              </span>
+              <span className="text-[9px] font-mono text-[#a89680]">
+                {badge.unlocked ? 'Desbloqueada' : `${badge.current}/${badge.target}`}
               </span>
             </div>
           ))}
