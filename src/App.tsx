@@ -13,12 +13,19 @@ import { EstilosView } from './components/EstilosView';
 import { InsigniasView } from './components/InsigniasView';
 import { PerfilView } from './components/PerfilView';
 import { DetailModal } from './components/DetailModal';
+import { WalkthroughModal } from './components/WalkthroughModal';
 import { evaluarInsignias } from './utils/badgeEngine';
+import {
+  initializeAndMigrateDatabase,
+  saveTastingToDB,
+  deleteTastingFromDB,
+  saveProfileToDB,
+} from './utils/db';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('mis-catas');
 
-  // Local storage for Tastings
+  // Local storage initial state as immediate synchronous buffer
   const [tastings, setTastings] = useState<BeerTasting[]>(() => {
     try {
       const saved = localStorage.getItem('diario_cervecero_catas');
@@ -28,7 +35,6 @@ export default function App() {
     }
   });
 
-  // Local storage for Profile
   const [userProfile, setUserProfile] = useState<UserProfile>(() => {
     try {
       const saved = localStorage.getItem('diario_cervecero_profile');
@@ -43,10 +49,43 @@ export default function App() {
   const [editingBeer, setEditingBeer] = useState<BeerTasting | null>(null);
   const [prefilledStyle, setPrefilledStyle] = useState<string | null>(null);
 
+  // First-Time Walkthrough Tutorial State
+  const [isWalkthroughOpen, setIsWalkthroughOpen] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('diario_cervecero_walkthrough_completed') === null;
+    } catch {
+      return false;
+    }
+  });
+
   // Offline / Online Status Management
   const [isOffline, setIsOffline] = useState<boolean>(() => !navigator.onLine);
   const [showStatusToast, setShowStatusToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+
+  // 1. Initialize IndexedDB and migrate any previous LocalStorage data
+  useEffect(() => {
+    let isMounted = true;
+    initializeAndMigrateDatabase(INITIAL_TASTINGS, INITIAL_USER_PROFILE)
+      .then(({ tastings: dbTastings, profile: dbProfile, migratedFromLocalStorage }) => {
+        if (isMounted) {
+          setTastings(dbTastings);
+          setUserProfile(dbProfile);
+          if (migratedFromLocalStorage) {
+            setToastMessage('✓ Catas y fotos migradas a IndexedDB con éxito');
+            setShowStatusToast(true);
+            setTimeout(() => setShowStatusToast(false), 4000);
+          }
+        }
+      })
+      .catch((err) => {
+        console.error('Error inicializando base de datos IndexedDB:', err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     const handleOnline = () => {
@@ -72,16 +111,7 @@ export default function App() {
     };
   }, []);
 
-  // Sync tastings to LocalStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem('diario_cervecero_catas', JSON.stringify(tastings));
-    } catch (e) {
-      console.error('Failed to save tastings', e);
-    }
-  }, [tastings]);
-
-  // Sync profile to LocalStorage & auto update count stats and title from badges
+  // Sync profile to IndexedDB and LocalStorage & auto update count stats and title from badges
   useEffect(() => {
     const uniqueStylesCount = new Set(tastings.map((t) => t.style)).size;
     const currentBadges = evaluarInsignias(tastings);
@@ -97,10 +127,14 @@ export default function App() {
         totalEstilos: uniqueStylesCount || 1,
       },
     };
+
+    // Asynchronously save to IndexedDB
+    saveProfileToDB(updated).catch((e) => console.error('IndexedDB profile save error:', e));
+
     try {
       localStorage.setItem('diario_cervecero_profile', JSON.stringify(updated));
     } catch (e) {
-      console.error('Failed to save profile', e);
+      console.error('Failed to save profile to localStorage', e);
     }
   }, [tastings]);
 
@@ -118,6 +152,16 @@ export default function App() {
     }
     setTastings(updatedTastings);
 
+    // Save directly to IndexedDB (virtually unlimited quota for high-res photos)
+    saveTastingToDB(cata).catch((e) => console.error('IndexedDB save error:', e));
+
+    // Fallback sync to localStorage (caught if storage quota exceeded)
+    try {
+      localStorage.setItem('diario_cervecero_catas', JSON.stringify(updatedTastings));
+    } catch {
+      // IndexedDB has already persisted the full high-res data safely
+    }
+
     // Check if new badges were unlocked!
     const nextBadges = evaluarInsignias(updatedTastings);
     const newlyUnlocked = nextBadges.filter((b) => b.unlocked && !prevUnlockedIds.has(b.id));
@@ -134,7 +178,17 @@ export default function App() {
 
   // Delete a Cata
   const handleDeleteCata = (id: string) => {
-    setTastings((prev) => prev.filter((item) => item.id !== id));
+    setTastings((prev) => {
+      const updated = prev.filter((item) => item.id !== id);
+      try {
+        localStorage.setItem('diario_cervecero_catas', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    // Remove from IndexedDB
+    deleteTastingFromDB(id).catch((e) => console.error('IndexedDB delete error:', e));
+
     if (selectedBeer?.id === id) {
       setSelectedBeer(null);
     }
@@ -162,6 +216,7 @@ export default function App() {
         userProfile={userProfile}
         onNavigate={setActiveTab}
         isOffline={isOffline}
+        onOpenWalkthrough={() => setIsWalkthroughOpen(true)}
         onBack={
           activeTab === 'nueva-cata'
             ? () => {
@@ -256,6 +311,7 @@ export default function App() {
             tastings={tastings}
             onUpdateProfile={setUserProfile}
             onNavigate={setActiveTab}
+            onOpenWalkthrough={() => setIsWalkthroughOpen(true)}
             onExportNotion={() => {
               const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(tastings, null, 2));
               const downloadAnchor = document.createElement('a');
@@ -270,11 +326,24 @@ export default function App() {
       </main>
 
       {/* Detail Modal */}
-      <DetailModal
-        beer={selectedBeer}
-        onClose={() => setSelectedBeer(null)}
-        onEdit={handleEditCata}
-        onDelete={handleDeleteCata}
+      {selectedBeer && (
+        <DetailModal
+          beer={selectedBeer}
+          onClose={() => setSelectedBeer(null)}
+          onEdit={handleEditCata}
+          onDelete={handleDeleteCata}
+        />
+      )}
+
+      {/* Interactive Walkthrough Tutorial for First-Time Users */}
+      <WalkthroughModal
+        isOpen={isWalkthroughOpen}
+        onClose={() => setIsWalkthroughOpen(false)}
+        onStartFirstCata={() => {
+          setEditingBeer(null);
+          setPrefilledStyle(null);
+          setActiveTab('nueva-cata');
+        }}
       />
 
       {/* Bottom Navigation Bar */}

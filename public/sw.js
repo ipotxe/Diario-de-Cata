@@ -44,6 +44,17 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Never intercept or cache development modules, Vite runtime, or HMR assets
+  if (
+    url.pathname.includes('/@') ||
+    url.pathname.includes('/node_modules/') ||
+    url.pathname.startsWith('/src/') ||
+    url.search.includes('?v=') ||
+    url.search.includes('&v=')
+  ) {
+    return;
+  }
+
   // Handle SPA navigation requests: Network first with Cache fallback
   if (request.mode === 'navigate' || request.destination === 'document') {
     event.respondWith(

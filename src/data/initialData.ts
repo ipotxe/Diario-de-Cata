@@ -167,4 +167,4 @@ export const INITIAL_USER_PROFILE: UserProfile = {
   ],
 };
 
-export const LOGO_URL = 'https://lh3.googleusercontent.com/aida-public/AB6AXuBEznkCmMpGA-syKlr24Nao60jr9fSD3eXkNdMxMZ1zd8g4PesITcVJKoWLpdM9F0o5yvKSB5ZanB0GoIixYRG7hR2cekG5XqJ3ZAwqNC99Kd-V2ajOM6bzC94Ubdc9GrLT2B-FPoF7vvtGdJ0dmtALQee21yv2t_LTAWe2XVmoeXNpNcHtSODSD3msXwYHTyRb3Sikgn6Z1YRmVbsdnQ4Ldgx-CRtNRwAtzBDwfX-lqwIAM0FNPWfn0g';
+export const LOGO_URL = '/icon.png';

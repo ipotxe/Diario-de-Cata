@@ -7,9 +7,13 @@ export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
     resolve: {
+      dedupe: ['react', 'react-dom'],
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(__dirname, './src'),
       },
+    },
+    optimizeDeps: {
+      include: ['react', 'react-dom'],
     },
     server: {
       port: 3000,

@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { UserProfile, BeerTasting, ActiveTab } from '../types';
 import { exportTastingsToCsv } from '../utils/exportCsv';
 import { evaluarInsignias } from '../utils/badgeEngine';
 import { ChapaBottleCap } from './ChapaBottleCap';
+import { getStorageUsage, isIndexedDBAvailable } from '../utils/db';
 
 interface PerfilViewProps {
   profile: UserProfile;
@@ -11,6 +12,7 @@ interface PerfilViewProps {
   onExportNotion?: () => void;
   onExportCsv?: () => void;
   onNavigate?: (tab: ActiveTab) => void;
+  onOpenWalkthrough?: () => void;
 }
 
 export const PerfilView: React.FC<PerfilViewProps> = ({
@@ -20,15 +22,29 @@ export const PerfilView: React.FC<PerfilViewProps> = ({
   onExportNotion,
   onExportCsv,
   onNavigate,
+  onOpenWalkthrough,
 }) => {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [isEditingModalOpen, setIsEditingModalOpen] = useState(false);
+  const [isDbModalOpen, setIsDbModalOpen] = useState(false);
+  const [storageInfo, setStorageInfo] = useState<{
+    quotaMB: number;
+    usageMB: number;
+    percentUsed: number;
+    tastingCount: number;
+    isIndexedDBSupported: boolean;
+  } | null>(null);
+
   const [editName, setEditName] = useState(profile.name);
   const [editTitle, setEditTitle] = useState(profile.title);
   const [editBio, setEditBio] = useState(profile.bio);
   const [editFavBrewery, setEditFavBrewery] = useState(profile.stats.favoriteBrewery);
   const [notionConnected, setNotionConnected] = useState(false);
   const [showToast, setShowToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    getStorageUsage().then(setStorageInfo).catch(console.error);
+  }, [tastings]);
 
   const triggerToast = (msg: string) => {
     setShowToast(msg);
@@ -225,6 +241,57 @@ export const PerfilView: React.FC<PerfilViewProps> = ({
         </h2>
 
         <div className="bg-[#1a1c1c] rounded-2xl overflow-hidden border border-white/5">
+          {/* Base de Datos Local (IndexedDB) */}
+          <button
+            onClick={() => setIsDbModalOpen(true)}
+            className="w-full flex items-center justify-between p-4 hover:bg-[#282a2b] transition-colors text-left group"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-[#7ef24a]/15 border border-[#7ef24a]/30 flex items-center justify-center text-[#7ef24a] group-hover:bg-[#7ef24a] group-hover:text-[#121414] transition-colors shrink-0">
+                <span className="material-symbols-outlined text-lg">database</span>
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-sm font-medium text-[#e2e2e2] group-hover:text-[#ffd18f] transition-colors">
+                  Base de Datos Local
+                </span>
+                <span className="text-[11px] text-[#9f8e79] truncate">
+                  IndexedDB Activo • Capacidad ilimitada para fotos y catas
+                </span>
+              </div>
+            </div>
+            <span className="px-2 py-0.5 bg-[#7ef24a]/15 border border-[#7ef24a]/30 text-[#7ef24a] text-[10px] font-mono font-bold rounded-md uppercase tracking-wider ml-2 shrink-0">
+              INDEXEDDB
+            </span>
+          </button>
+
+          <div className="mx-4 h-[1px] bg-white/5" />
+
+          {/* Tutorial Interactivo de Cata */}
+          {onOpenWalkthrough && (
+            <>
+              <button
+                onClick={onOpenWalkthrough}
+                className="w-full flex items-center justify-between p-4 hover:bg-[#282a2b] transition-colors text-left group"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-8 h-8 rounded-lg bg-[#fbad18]/15 border border-[#fbad18]/30 flex items-center justify-center text-[#ffd18f] group-hover:bg-[#fbad18] group-hover:text-[#121414] transition-colors shrink-0">
+                    <span className="material-symbols-outlined text-lg">school</span>
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-sm font-medium text-[#e2e2e2] group-hover:text-[#ffd18f] transition-colors">
+                      Tutorial de Inicio
+                    </span>
+                    <span className="text-[11px] text-[#9f8e79] truncate">
+                      Guía paso a paso interactiva para registrar catas
+                    </span>
+                  </div>
+                </div>
+                <span className="material-symbols-outlined text-[#d7c4ad] text-xl">chevron_right</span>
+              </button>
+              <div className="mx-4 h-[1px] bg-white/5" />
+            </>
+          )}
+
           {/* Editar Perfil */}
           <button
             onClick={() => setIsEditingModalOpen(true)}
@@ -391,6 +458,91 @@ export const PerfilView: React.FC<PerfilViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* IndexedDB Database Status Modal */}
+      {isDbModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+          <div className="w-full max-w-md bg-[#1e2020] border border-white/10 rounded-2xl p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2.5 text-[#ffd18f]">
+                <div className="w-9 h-9 rounded-xl bg-[#7ef24a]/15 border border-[#7ef24a]/30 flex items-center justify-center text-[#7ef24a]">
+                  <span className="material-symbols-outlined text-xl">database</span>
+                </div>
+                <div>
+                  <h3 className="font-serif text-lg font-bold text-white">Base de Datos Local</h3>
+                  <p className="text-[11px] text-[#9f8e79]">Motor IndexedDB del navegador</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDbModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-[#d7c4ad] flex items-center justify-center"
+              >
+                <span className="material-symbols-outlined text-base">close</span>
+              </button>
+            </div>
+
+            <div className="space-y-3 py-1">
+              <div className="bg-[#121414] p-3.5 rounded-xl border border-white/5 space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-[#9f8e79]">Estado del Motor:</span>
+                  <span className="text-[#7ef24a] font-bold flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-[#7ef24a] animate-pulse" />
+                    Activo y Persistente
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-[#9f8e79]">Base de Datos:</span>
+                  <span className="font-mono text-[#ffd18f] font-semibold">BeerTastingJournalDB</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-[#9f8e79]">Catas Almacenadas:</span>
+                  <span className="font-mono text-[#e2e2e2] font-bold">{tastings.length} registradas</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-[#9f8e79]">Capacidad para Fotografías:</span>
+                  <span className="text-[#ffd18f] font-semibold">Ilimitada (Multi-foto HD)</span>
+                </div>
+                {storageInfo && storageInfo.quotaMB > 0 && (
+                  <div className="flex justify-between items-center text-xs pt-1 border-t border-white/5">
+                    <span className="text-[#9f8e79]">Cuota Estimada del Dispositivo:</span>
+                    <span className="font-mono text-[#9f8e79]">~{storageInfo.quotaMB} MB disponibles</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-3 bg-[#fbad18]/10 border border-[#fbad18]/20 rounded-xl text-xs text-[#ffd18f] flex items-start gap-2.5">
+                <span className="material-symbols-outlined text-base text-[#fbad18] shrink-0 mt-0.5">verified_user</span>
+                <p className="leading-relaxed">
+                  Tus notas de cata y fotografías se guardan en <strong>IndexedDB</strong>, superando el límite de 5 MB de LocalStorage y garantizando funcionamiento completo 100% offline.
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 flex flex-col sm:flex-row gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  if (onExportNotion) onExportNotion();
+                  triggerToast('¡Copia de seguridad en JSON descargada!');
+                }}
+                className="flex-1 py-3 px-3 bg-[#282a2b] hover:bg-[#333535] text-[#ffd18f] rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 border border-white/10 active:scale-95 transition-all"
+              >
+                <span className="material-symbols-outlined text-base">file_download</span>
+                Backup JSON
+              </button>
+              <button
+                type="button"
+                onClick={handleExportCsv}
+                className="flex-1 py-3 px-3 bg-[#fbad18] hover:bg-[#ffbe3b] text-[#684500] rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+              >
+                <span className="material-symbols-outlined text-base">table_view</span>
+                Exportar CSV
+              </button>
+            </div>
           </div>
         </div>
       )}

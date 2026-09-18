@@ -9,6 +9,7 @@ interface HeaderProps {
   titleOverride?: string;
   onBack?: () => void;
   isOffline?: boolean;
+  onOpenWalkthrough?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -18,6 +19,7 @@ export const Header: React.FC<HeaderProps> = ({
   titleOverride,
   onBack,
   isOffline = false,
+  onOpenWalkthrough,
 }) => {
   const getTitle = () => {
     if (titleOverride) return titleOverride;
@@ -60,7 +62,7 @@ export const Header: React.FC<HeaderProps> = ({
             <img
               src={LOGO_URL}
               alt="Diario del Cervecero Logo"
-              className="h-8 w-auto object-contain cursor-pointer"
+              className="h-8 w-8 rounded-lg object-cover cursor-pointer shadow-sm ring-1 ring-white/15 hover:ring-[#fbad18]/60 transition-all active:scale-95"
               onClick={() => onNavigate('mis-catas')}
             />
             <h1 className="font-serif text-2xl font-semibold text-[#ffd18f]">
@@ -75,11 +77,22 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         )}
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
           {isOffline && (
             <span className="inline-flex sm:hidden items-center gap-1 px-2 py-0.5 rounded-full bg-[#fbad18]/20 border border-[#fbad18]/40 text-[#ffd18f] text-[10px] font-bold">
               <span className="material-symbols-outlined text-xs">cloud_off</span>
             </span>
+          )}
+
+          {onOpenWalkthrough && (
+            <button
+              onClick={onOpenWalkthrough}
+              className="w-9 h-9 rounded-full bg-[#1e2020] hover:bg-[#282a2b] border border-white/10 hover:border-[#fbad18]/50 text-[#ffd18f] flex items-center justify-center transition-all active:scale-95 shadow-sm"
+              title="Guía y Tutorial de Cata"
+              aria-label="Abrir tutorial interactivo de cata"
+            >
+              <span className="material-symbols-outlined text-lg">school</span>
+            </button>
           )}
 
           <button
