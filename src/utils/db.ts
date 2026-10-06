@@ -162,6 +162,27 @@ export async function saveAllTastingsToDB(tastings: BeerTasting[]): Promise<void
 }
 
 /**
+ * Vacía el almacén de catas en IndexedDB.
+ */
+export async function clearAllTastingsFromDB(): Promise<void> {
+  try {
+    const db = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([STORE_TASTINGS], 'readwrite');
+      const store = transaction.objectStore(STORE_TASTINGS);
+      const request = store.clear();
+      request.onsuccess = () => resolve();
+      request.onerror = () => {
+        console.error('[IndexedDB] Error al vaciar almacén de catas:', request.error);
+        reject(request.error);
+      };
+    });
+  } catch (err) {
+    console.error('[IndexedDB] Fallo al limpiar catas:', err);
+  }
+}
+
+/**
  * Elimina una cata por su ID de IndexedDB.
  */
 export async function deleteTastingFromDB(id: string): Promise<void> {
@@ -279,8 +300,26 @@ export async function getStorageUsage(): Promise<{
 }
 
 /**
+ * Detecta si una cata corresponde a los ejemplos predeterminados de muestra.
+ */
+export const isDefaultSampleTasting = (t: BeerTasting): boolean => {
+  if (!t) return false;
+  const isIdMatch = t.id === '1' || t.id === '2' || t.id === '3';
+  const isNameMatch =
+    t.name === 'Nebula Haze IPA' ||
+    t.name === 'Midnight Stout' ||
+    t.name === 'Cactus Sour';
+  const isBreweryMatch =
+    t.brewery === 'Stellar Brewing Co.' ||
+    t.brewery === 'Obsidian Labs' ||
+    t.brewery === 'Prickly Pear Brewing';
+
+  return (isIdMatch && isNameMatch) || (isNameMatch && isBreweryMatch);
+};
+
+/**
  * Inicializa la base de datos y migra los datos preexistentes desde LocalStorage
- * sin pérdida de información para el usuario.
+ * sin pérdida de información para el usuario, eliminando los ejemplos predeterminados.
  */
 export async function initializeAndMigrateDatabase(
   initialTastings: BeerTasting[],
@@ -291,8 +330,16 @@ export async function initializeAndMigrateDatabase(
     try {
       const savedTastings = localStorage.getItem('diario_cervecero_catas');
       const savedProfile = localStorage.getItem('diario_cervecero_profile');
+      let cleanedTastings: BeerTasting[] = initialTastings;
+      if (savedTastings) {
+        const parsed = JSON.parse(savedTastings);
+        if (Array.isArray(parsed)) {
+          cleanedTastings = parsed.filter((t) => !isDefaultSampleTasting(t));
+          localStorage.setItem('diario_cervecero_catas', JSON.stringify(cleanedTastings));
+        }
+      }
       return {
-        tastings: savedTastings ? JSON.parse(savedTastings) : initialTastings,
+        tastings: cleanedTastings,
         profile: savedProfile ? JSON.parse(savedProfile) : initialProfile,
         migratedFromLocalStorage: false,
       };
@@ -310,17 +357,27 @@ export async function initializeAndMigrateDatabase(
     let finalTastings: BeerTasting[] = [];
     let migrated = false;
 
-    if (existingInDB.length > 0) {
-      finalTastings = existingInDB;
+    // Purgar de IndexedDB cualquier cata de ejemplo predeterminada si existía
+    const sampleTastingsInDB = existingInDB.filter(isDefaultSampleTasting);
+    if (sampleTastingsInDB.length > 0) {
+      console.info(`[IndexedDB] Eliminando ${sampleTastingsInDB.length} catas de ejemplo por defecto...`);
+      for (const sample of sampleTastingsInDB) {
+        await deleteTastingFromDB(sample.id);
+      }
+    }
+    const nonSampleExisting = existingInDB.filter((t) => !isDefaultSampleTasting(t));
+
+    if (nonSampleExisting.length > 0) {
+      finalTastings = nonSampleExisting;
     } else {
-      // Verificar si hay datos antiguos en localStorage para migrarlos a IndexedDB
+      // Verificar si hay datos en localStorage para migrarlos a IndexedDB (filtrando ejemplos)
       let fromLocalStorage: BeerTasting[] | null = null;
       try {
         const raw = localStorage.getItem('diario_cervecero_catas');
         if (raw) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            fromLocalStorage = parsed;
+            fromLocalStorage = parsed.filter((t) => !isDefaultSampleTasting(t));
           }
         }
       } catch (e) {
@@ -328,17 +385,24 @@ export async function initializeAndMigrateDatabase(
       }
 
       if (fromLocalStorage && fromLocalStorage.length > 0) {
-        console.info(`[IndexedDB] Migrando ${fromLocalStorage.length} catas desde LocalStorage a IndexedDB...`);
+        console.info(`[IndexedDB] Migrando ${fromLocalStorage.length} catas de usuario desde LocalStorage a IndexedDB...`);
         await saveAllTastingsToDB(fromLocalStorage);
         finalTastings = fromLocalStorage;
         migrated = true;
       } else {
-        // Inicializar con las catas de muestra predeterminadas
-        console.info('[IndexedDB] Inicializando base de datos con catas iniciales...');
-        await saveAllTastingsToDB(initialTastings);
-        finalTastings = initialTastings;
+        // Inicializar sin ejemplos (vacío a menos que se hayan pasado catas explícitas no de ejemplo)
+        const validInitial = initialTastings.filter((t) => !isDefaultSampleTasting(t));
+        if (validInitial.length > 0) {
+          await saveAllTastingsToDB(validInitial);
+        }
+        finalTastings = validInitial;
       }
     }
+
+    // Sincronizar localStorage con las catas limpiadas
+    try {
+      localStorage.setItem('diario_cervecero_catas', JSON.stringify(finalTastings));
+    } catch {}
 
     // Perfil
     const profileInDB = await getProfileFromDB();
@@ -346,6 +410,21 @@ export async function initializeAndMigrateDatabase(
 
     if (profileInDB) {
       finalProfile = profileInDB;
+      // Si el perfil antiguo tenía estadísticas de ejemplo (48 catas, Carlos M.) pero no hay catas reales, limpiarlas
+      if (finalTastings.length === 0 && (finalProfile.name === 'Carlos M.' || finalProfile.stats?.totalCatas === 48)) {
+        finalProfile = {
+          ...finalProfile,
+          name: finalProfile.name === 'Carlos M.' ? initialProfile.name : finalProfile.name,
+          title: 'Iniciado',
+          stats: {
+            totalCatas: 0,
+            totalEstilos: 0,
+            favoriteBrewery: '—',
+          },
+          achievements: initialProfile.achievements,
+        };
+        await saveProfileToDB(finalProfile);
+      }
     } else {
       let profileFromLS: UserProfile | null = null;
       try {
@@ -355,8 +434,25 @@ export async function initializeAndMigrateDatabase(
         // Ignore
       }
       finalProfile = profileFromLS || initialProfile;
+      if (finalTastings.length === 0 && (finalProfile.name === 'Carlos M.' || finalProfile.stats?.totalCatas === 48)) {
+        finalProfile = {
+          ...finalProfile,
+          name: finalProfile.name === 'Carlos M.' ? initialProfile.name : finalProfile.name,
+          title: 'Iniciado',
+          stats: {
+            totalCatas: 0,
+            totalEstilos: 0,
+            favoriteBrewery: '—',
+          },
+          achievements: initialProfile.achievements,
+        };
+      }
       await saveProfileToDB(finalProfile);
     }
+
+    try {
+      localStorage.setItem('diario_cervecero_profile', JSON.stringify(finalProfile));
+    } catch {}
 
     return {
       tastings: finalTastings,

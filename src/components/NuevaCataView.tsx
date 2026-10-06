@@ -2,7 +2,11 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   BeerTasting,
   ClarityType,
+  BrillanteType,
   FoamType,
+  FoamColorType,
+  FoamAdherenceType,
+  FoamPersistenceType,
   CarbonationType,
   RadarValues,
   AromaRadarValues,
@@ -15,10 +19,10 @@ import {
   COMMON_AROMA_DESCRIPTORS,
   COMMON_SABOR_DESCRIPTORS,
 } from '../data/sensoryDescriptors';
-import { INITIAL_TASTINGS } from '../data/initialData';
 import { BJCP_STYLES, BJCP_CATEGORY_GROUPS, getBJCPStyleLabel } from '../data/bjcpStyles';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { ScannedBeerData } from '../utils/openFoodFacts';
+import { autoFocusBeerWithGemini } from '../utils/aiCrop';
 
 interface NuevaCataViewProps {
   onSave: (cata: BeerTasting) => void;
@@ -79,8 +83,12 @@ export const NuevaCataView: React.FC<NuevaCataViewProps> = ({
   const [ebc, setEbc] = useState<number | ''>(12);
   const [srm, setSrm] = useState(4);
 
-  const [clarity, setClarity] = useState<ClarityType>('Brillante');
-  const [foamType, setFoamType] = useState<FoamType>('Persistente');
+  const [clarity, setClarity] = useState<ClarityType>('Cristalina');
+  const [brillante, setBrillante] = useState<BrillanteType>('Brillante');
+  const [foamType, setFoamType] = useState<FoamType>('Cremosa');
+  const [foamColor, setFoamColor] = useState<FoamColorType>('Blanca');
+  const [foamAdherence, setFoamAdherence] = useState<FoamAdherenceType[]>(['Media']);
+  const [foamPersistence, setFoamPersistence] = useState<FoamPersistenceType>('Media');
   const [carbonation, setCarbonation] = useState<CarbonationType>('Media');
 
   const [sensoryViewTab, setSensoryViewTab] = useState<'aroma' | 'sabor' | 'ambos'>('ambos');
@@ -129,6 +137,8 @@ export const NuevaCataView: React.FC<NuevaCataViewProps> = ({
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [barcodeToast, setBarcodeToast] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
+  const [isAiCropping, setIsAiCropping] = useState(false);
+  const [aiCropToast, setAiCropToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   const handleApplyBeerData = (data: ScannedBeerData) => {
     let appliedCount = 0;
@@ -211,8 +221,15 @@ export const NuevaCataView: React.FC<NuevaCataViewProps> = ({
       setIbu(editingCata.ibu);
       setEbc(editingCata.ebc);
       setSrm(editingCata.srm);
-      setClarity(editingCata.clarity);
-      setFoamType(editingCata.foamType);
+      setClarity(editingCata.clarity || 'Cristalina');
+      setBrillante(editingCata.brillante || 'Brillante');
+      setFoamType(editingCata.foamType === 'Jabonosa' ? 'Jabonosa' : 'Cremosa');
+      setFoamColor(editingCata.foamColor || 'Blanca');
+      const validAdherence: FoamAdherenceType[] = ['Baja', 'Media', 'Alta'];
+      const rawAdherence = editingCata.foamAdherence || ['Media'];
+      const filteredAdherence = rawAdherence.filter((item) => validAdherence.includes(item as FoamAdherenceType));
+      setFoamAdherence(filteredAdherence.length > 0 ? (filteredAdherence as FoamAdherenceType[]) : ['Media']);
+      setFoamPersistence(editingCata.foamPersistence || 'Media');
       setCarbonation(editingCata.carbonation);
 
       if (editingCata.aromaRadar) {
@@ -309,8 +326,11 @@ export const NuevaCataView: React.FC<NuevaCataViewProps> = ({
           canvas.height = height;
           const ctx = canvas.getContext('2d');
           if (ctx) {
+            // Fondo blanco neutro por si la imagen tiene canal alfa (PNG)
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, width, height);
             ctx.drawImage(img, 0, 0, width, height);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
             setPhotos((prev) => {
               const base =
                 prev.length === 1 && PRESET_PHOTOS.some((p) => p.url === prev[0])
@@ -368,6 +388,44 @@ export const NuevaCataView: React.FC<NuevaCataViewProps> = ({
       return updated;
     });
     setPreviewPhotoIndex(0);
+  };
+
+  const handleAiCropFocus = async (indexToCrop: number) => {
+    const currentPhoto = photos[indexToCrop];
+    if (!currentPhoto) return;
+
+    setIsAiCropping(true);
+    setAiCropToast({ message: '🤖 Analizando con Gemini: detectando lata, botella y copa...', type: 'info' });
+
+    try {
+      const result = await autoFocusBeerWithGemini(currentPhoto);
+      if (result.success && result.croppedImageUrl) {
+        setPhotos((prev) => {
+          const updated = [...prev];
+          updated[indexToCrop] = result.croppedImageUrl!;
+          return updated;
+        });
+        setAiCropToast({
+          message: `✨ ¡Foto enfocada con Gemini! ${result.focusDescription}. (~${result.newSizeKB} KB)`,
+          type: 'success',
+        });
+      } else {
+        setAiCropToast({
+          message: result.error || 'No se pudo encuadrar la cerveza automáticamente.',
+          type: 'error',
+        });
+      }
+    } catch (err: any) {
+      setAiCropToast({
+        message: err?.message || 'Error al conectar con la IA de Gemini.',
+        type: 'error',
+      });
+    } finally {
+      setIsAiCropping(false);
+      setTimeout(() => {
+        setAiCropToast(null);
+      }, 5000);
+    }
   };
 
   const handleAddPresetPhoto = (url: string) => {
@@ -441,7 +499,11 @@ export const NuevaCataView: React.FC<NuevaCataViewProps> = ({
         ebc: typeof ebc === 'number' ? ebc : 10,
         srm,
         clarity,
+        brillante,
         foamType,
+        foamColor,
+        foamAdherence,
+        foamPersistence,
         carbonation,
         aromaRadar,
         saborRadar,
@@ -694,33 +756,143 @@ export const NuevaCataView: React.FC<NuevaCataViewProps> = ({
             {/* SRM Slider Component */}
             <SRMSlider srm={srm} onChange={setSrm} />
 
-            {/* Claridad and Tipo de Espuma */}
+            {/* Claridad and Brillante */}
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-semibold text-[#d7c4ad]">Claridad</label>
-                <select
-                  value={clarity}
-                  onChange={(e) => setClarity(e.target.value as ClarityType)}
-                  className="bg-[#121414] border border-white/5 rounded-xl p-3 text-sm text-[#e2e2e2] focus:ring-1 focus:ring-[#fbad18] outline-none appearance-none"
-                >
-                  <option value="Brillante">Brillante</option>
-                  <option value="Velada">Velada</option>
-                  <option value="Turbia">Turbia</option>
-                </select>
+                <div className="relative">
+                  <select
+                    value={clarity}
+                    onChange={(e) => setClarity(e.target.value as ClarityType)}
+                    className="w-full bg-[#121414] border border-white/5 rounded-xl p-3 pr-8 text-sm text-[#e2e2e2] focus:ring-1 focus:ring-[#fbad18] outline-none appearance-none cursor-pointer"
+                  >
+                    <option value="Cristalina">Cristalina</option>
+                    <option value="Velada">Velada</option>
+                    <option value="Opaco">Opaco</option>
+                    <option value="Turbia">Turbia</option>
+                    <option value="Transparente">Transparente</option>
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-[#ffd18f]">
+                    <span className="material-symbols-outlined text-base">unfold_more</span>
+                  </div>
+                </div>
               </div>
 
               <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-[#d7c4ad]">Brillante</label>
+                <div className="relative">
+                  <select
+                    value={brillante}
+                    onChange={(e) => setBrillante(e.target.value as BrillanteType)}
+                    className="w-full bg-[#121414] border border-white/5 rounded-xl p-3 pr-8 text-sm text-[#e2e2e2] focus:ring-1 focus:ring-[#fbad18] outline-none appearance-none cursor-pointer"
+                  >
+                    <option value="Brillante">Brillante</option>
+                    <option value="No Brillante">No Brillante</option>
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-[#ffd18f]">
+                    <span className="material-symbols-outlined text-base">unfold_more</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Tipo de Espuma & Color Espuma */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-semibold text-[#d7c4ad]">Tipo de Espuma</label>
+                <div className="relative">
+                  <select
+                    value={foamType}
+                    onChange={(e) => setFoamType(e.target.value as FoamType)}
+                    className="w-full bg-[#121414] border border-white/5 rounded-xl p-3 pr-8 text-sm text-[#e2e2e2] focus:ring-1 focus:ring-[#fbad18] outline-none appearance-none cursor-pointer"
+                  >
+                    <option value="Cremosa">Cremosa</option>
+                    <option value="Jabonosa">Jabonosa</option>
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-[#ffd18f]">
+                    <span className="material-symbols-outlined text-base">unfold_more</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-[#d7c4ad]">Color Espuma</label>
+                <div className="relative">
+                  <select
+                    value={foamColor}
+                    onChange={(e) => setFoamColor(e.target.value as FoamColorType)}
+                    className="w-full bg-[#121414] border border-white/5 rounded-xl p-3 pr-8 text-sm text-[#e2e2e2] focus:ring-1 focus:ring-[#fbad18] outline-none appearance-none cursor-pointer"
+                  >
+                    <option value="Blanca">Blanca</option>
+                    <option value="Hueso">Hueso</option>
+                    <option value="Beige">Beige</option>
+                    <option value="Marrón">Marrón</option>
+                    <option value="Blanco Roto">Blanco Roto</option>
+                    <option value="Rosa">Rosa</option>
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-[#ffd18f]">
+                    <span className="material-symbols-outlined text-base">unfold_more</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Adherencia Espuma (multiselección máx. 2) */}
+            <div className="flex flex-col gap-2">
+              <div className="flex justify-between items-center text-xs text-[#d7c4ad]">
+                <span className="font-semibold">Adherencia Espuma</span>
+                <span className="text-[11px] text-[#ffd18f] font-medium">
+                  {foamAdherence.length === 0 ? 'Sin selección' : foamAdherence.join(' + ')} (máx. 2)
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {(['Baja', 'Media', 'Alta'] as FoamAdherenceType[]).map((option) => {
+                  const isSelected = foamAdherence.includes(option);
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => {
+                        if (isSelected) {
+                          setFoamAdherence(foamAdherence.filter((item) => item !== option));
+                        } else {
+                          if (foamAdherence.length >= 2) {
+                            setFoamAdherence([foamAdherence[1], option]);
+                          } else {
+                            setFoamAdherence([...foamAdherence, option]);
+                          }
+                        }
+                      }}
+                      className={`py-2 px-2 rounded-xl border text-xs font-semibold text-center transition-all cursor-pointer select-none active:scale-95 ${
+                        isSelected
+                          ? 'bg-[#fbad18] text-[#684500] border-[#fbad18] font-bold shadow-sm'
+                          : 'bg-[#121414] text-[#d7c4ad] border-white/5 hover:border-white/20'
+                      }`}
+                    >
+                      {option}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Persistencia Espuma */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-[#d7c4ad]">Persistencia Espuma</label>
+              <div className="relative">
                 <select
-                  value={foamType}
-                  onChange={(e) => setFoamType(e.target.value as FoamType)}
-                  className="bg-[#121414] border border-white/5 rounded-xl p-3 text-sm text-[#e2e2e2] focus:ring-1 focus:ring-[#fbad18] outline-none appearance-none"
+                  value={foamPersistence}
+                  onChange={(e) => setFoamPersistence(e.target.value as FoamPersistenceType)}
+                  className="w-full bg-[#121414] border border-white/5 rounded-xl p-3 pr-8 text-sm text-[#e2e2e2] focus:ring-1 focus:ring-[#fbad18] outline-none appearance-none cursor-pointer"
                 >
-                  <option value="Persistente">Persistente</option>
-                  <option value="Fugaz">Fugaz</option>
-                  <option value="Cremosa">Cremosa</option>
-                  <option value="Jabonosa">Jabonosa</option>
+                  <option value="Baja">Baja</option>
+                  <option value="Media">Media</option>
+                  <option value="Alta">Alta</option>
+                  <option value="Sin Espuma">Sin Espuma</option>
                 </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-[#ffd18f]">
+                  <span className="material-symbols-outlined text-base">unfold_more</span>
+                </div>
               </div>
             </div>
 
@@ -977,12 +1149,26 @@ export const NuevaCataView: React.FC<NuevaCataViewProps> = ({
                   <img
                     src={photos[previewPhotoIndex < photos.length ? previewPhotoIndex : 0]}
                     alt={`Foto ${previewPhotoIndex + 1}`}
-                    className="w-full h-full object-cover transition-transform duration-300"
+                    className={`w-full h-full object-cover object-center transition-all duration-300 ${
+                      isAiCropping ? 'scale-105 brightness-75 blur-[1px]' : ''
+                    }`}
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
 
-                  {/* Top Badge: Main vs Secondary */}
-                  <div className="absolute top-3 left-3 flex items-center gap-1.5">
+                  {/* AI Scanning Beam Overlay */}
+                  {isAiCropping && (
+                    <div className="absolute inset-0 z-20 bg-black/50 backdrop-blur-xs flex flex-col items-center justify-center gap-2 text-[#ffd18f] animate-pulse">
+                      <div className="w-10 h-10 rounded-full bg-[#fbad18]/20 border border-[#fbad18] flex items-center justify-center animate-spin">
+                        <span className="material-symbols-outlined text-xl text-[#fbad18]">auto_awesome</span>
+                      </div>
+                      <span className="text-xs font-bold font-mono tracking-wide">
+                        Detectando botella, lata y copa con Gemini...
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Top Badge: Main vs Secondary & Compression Size */}
+                  <div className="absolute top-3 left-3 flex flex-wrap items-center gap-1.5">
                     {previewPhotoIndex === 0 ? (
                       <span className="bg-[#fbad18] text-[#684500] text-[10px] font-black uppercase px-2.5 py-1 rounded-full flex items-center gap-1 shadow-lg border border-[#ffd18f]/40">
                         <span className="material-symbols-outlined text-xs">star</span>
@@ -994,15 +1180,36 @@ export const NuevaCataView: React.FC<NuevaCataViewProps> = ({
                         Foto #{previewPhotoIndex + 1}
                       </span>
                     )}
+
+                    {photos[previewPhotoIndex < photos.length ? previewPhotoIndex : 0]?.startsWith('data:') && (
+                      <span className="bg-black/75 backdrop-blur-md text-emerald-400 text-[10px] font-mono font-bold px-2 py-1 rounded-full flex items-center gap-1 border border-emerald-500/30 shadow">
+                        <span className="material-symbols-outlined text-xs">compress</span>
+                        ~{Math.round(((photos[previewPhotoIndex < photos.length ? previewPhotoIndex : 0].split(',')[1] || '').length * 3) / 4 / 1024)} KB
+                      </span>
+                    )}
                   </div>
 
                   {/* Bottom Action bar inside preview */}
-                  <div className="absolute bottom-3 left-3 right-3 flex justify-between items-center">
+                  <div className="absolute bottom-3 left-3 right-3 flex justify-between items-center z-10">
                     <span className="text-[11px] text-white/80 font-mono">
                       Foto {previewPhotoIndex + 1} de {photos.length}
                     </span>
 
-                    <div className="flex gap-1.5">
+                    <div className="flex gap-1.5 items-center">
+                      {/* AI Crop Button directly inside Hero bar */}
+                      <button
+                        type="button"
+                        onClick={() => handleAiCropFocus(previewPhotoIndex < photos.length ? previewPhotoIndex : 0)}
+                        disabled={isAiCropping}
+                        className="px-2.5 py-1 bg-gradient-to-r from-[#fbad18] to-[#ffd18f] hover:brightness-110 text-[#684500] text-xs font-black rounded-lg shadow-md flex items-center gap-1 transition-all active:scale-95 disabled:opacity-50"
+                        title="Enfocar en la lata/botella y copa con IA para la portada"
+                      >
+                        <span className="material-symbols-outlined text-sm">
+                          {isAiCropping ? 'hourglass_top' : 'auto_fix_high'}
+                        </span>
+                        <span>{isAiCropping ? 'Enfocando...' : 'Enfoque IA'}</span>
+                      </button>
+
                       {previewPhotoIndex !== 0 && (
                         <button
                           type="button"
@@ -1026,6 +1233,60 @@ export const NuevaCataView: React.FC<NuevaCataViewProps> = ({
                       </button>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* Dedicated Gemini AI Crop & Framing Box */}
+              {photos.length > 0 && (
+                <div className="bg-[#121414] p-3 rounded-xl border border-[#fbad18]/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-[#fbad18]/20 border border-[#fbad18]/30 flex items-center justify-center text-[#ffd18f] shrink-0">
+                      <span className="material-symbols-outlined text-base">center_focus_strong</span>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h4 className="text-xs font-bold text-[#ffd18f]">
+                          Enfoque de Cerveza y Copa con Gemini AI
+                        </h4>
+                        <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-[#fbad18]/15 border border-[#fbad18]/30 text-[#ffd18f]">
+                          PORTADA
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[#9f8e79] mt-0.5">
+                        Detecta y encuadra la lata, botellín y copa eliminando fondos sobrantes para reducir el tamaño en Mis Catas.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleAiCropFocus(previewPhotoIndex < photos.length ? previewPhotoIndex : 0)}
+                    disabled={isAiCropping}
+                    className="w-full sm:w-auto px-3.5 py-2 bg-gradient-to-r from-[#fbad18] to-[#ffc043] text-[#121414] text-xs font-black rounded-xl shadow-md flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 shrink-0 cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-sm">
+                      {isAiCropping ? 'hourglass_top' : 'auto_awesome'}
+                    </span>
+                    <span>{isAiCropping ? 'Analizando...' : 'Centrar y Reducir con IA'}</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Toast for AI crop status */}
+              {aiCropToast && (
+                <div
+                  className={`p-2.5 rounded-xl text-xs flex items-center gap-2 transition-all ${
+                    aiCropToast.type === 'success'
+                      ? 'bg-emerald-950/50 border border-emerald-500/40 text-emerald-300'
+                      : aiCropToast.type === 'error'
+                      ? 'bg-red-950/50 border border-red-500/40 text-red-300'
+                      : 'bg-[#1e2020] border border-[#fbad18]/40 text-[#ffd18f] animate-pulse'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-sm">
+                    {aiCropToast.type === 'success' ? 'check_circle' : aiCropToast.type === 'error' ? 'error' : 'smart_toy'}
+                  </span>
+                  <span>{aiCropToast.message}</span>
                 </div>
               )}
 

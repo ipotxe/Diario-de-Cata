@@ -302,26 +302,8 @@ export const DetailModal: React.FC<DetailModalProps> = ({
             </>
           )}
 
-          {/* Floating Lupa / Zoom Original Badge */}
-          <div className="absolute bottom-3 right-4 z-20" onClick={(e) => e.stopPropagation()}>
-            <button
-              type="button"
-              onClick={() => {
-                setZoomMode('contain');
-                setIsImageViewerOpen(true);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/75 backdrop-blur-md text-[#ffd18f] hover:text-white border border-white/20 hover:border-[#fbad18]/60 hover:bg-black/90 active:scale-95 transition-all text-xs font-semibold shadow-xl group cursor-pointer"
-              title="Pulsar lupa para ver imagen a tamaño completo original"
-            >
-              <span className="material-symbols-outlined text-base text-[#fbad18] group-hover:scale-125 transition-transform">
-                zoom_in
-              </span>
-              <span className="text-[11px] font-medium">Tamaño Original</span>
-            </button>
-          </div>
-
           {/* Title inside header bottom */}
-          <div className="absolute bottom-3 left-5 right-28 z-20 pointer-events-none">
+          <div className="absolute bottom-3 left-5 right-5 z-20 pointer-events-none">
             <span className="text-xs font-semibold px-2.5 py-1 bg-[#fbad18] text-[#684500] rounded-full uppercase tracking-wider mb-1 inline-block">
               {beer.style}
             </span>
@@ -424,9 +406,29 @@ export const DetailModal: React.FC<DetailModalProps> = ({
               <span className="px-3 py-1 bg-[#282a2b] rounded-full text-[#e2e2e2] border border-white/10">
                 Claridad: <strong className="text-[#ffd18f]">{beer.clarity}</strong>
               </span>
+              {beer.brillante && (
+                <span className="px-3 py-1 bg-[#282a2b] rounded-full text-[#e2e2e2] border border-white/10">
+                  Brillante: <strong className="text-[#ffd18f]">{beer.brillante}</strong>
+                </span>
+              )}
               <span className="px-3 py-1 bg-[#282a2b] rounded-full text-[#e2e2e2] border border-white/10">
                 Espuma: <strong className="text-[#ffd18f]">{beer.foamType}</strong>
               </span>
+              {beer.foamColor && (
+                <span className="px-3 py-1 bg-[#282a2b] rounded-full text-[#e2e2e2] border border-white/10">
+                  Color Espuma: <strong className="text-[#ffd18f]">{beer.foamColor}</strong>
+                </span>
+              )}
+              {beer.foamAdherence && beer.foamAdherence.length > 0 && (
+                <span className="px-3 py-1 bg-[#282a2b] rounded-full text-[#e2e2e2] border border-white/10">
+                  Adherencia: <strong className="text-[#ffd18f]">{beer.foamAdherence.join(' + ')}</strong>
+                </span>
+              )}
+              {beer.foamPersistence && (
+                <span className="px-3 py-1 bg-[#282a2b] rounded-full text-[#e2e2e2] border border-white/10">
+                  Persistencia: <strong className="text-[#ffd18f]">{beer.foamPersistence}</strong>
+                </span>
+              )}
               <span className="px-3 py-1 bg-[#282a2b] rounded-full text-[#e2e2e2] border border-white/10">
                 Carbonatación: <strong className="text-[#ffd18f]">{beer.carbonation}</strong>
               </span>

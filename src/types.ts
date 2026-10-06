@@ -1,5 +1,9 @@
-export type ClarityType = 'Brillante' | 'Velada' | 'Turbia';
-export type FoamType = 'Persistente' | 'Fugaz' | 'Cremosa' | 'Jabonosa';
+export type ClarityType = 'Cristalina' | 'Velada' | 'Opaco' | 'Turbia' | 'Transparente' | 'Brillante';
+export type BrillanteType = 'Brillante' | 'No Brillante';
+export type FoamType = 'Cremosa' | 'Jabonosa' | 'Persistente' | 'Fugaz';
+export type FoamColorType = 'Blanca' | 'Hueso' | 'Beige' | 'Marrón' | 'Blanco Roto' | 'Rosa';
+export type FoamAdherenceType = 'Baja' | 'Media' | 'Alta';
+export type FoamPersistenceType = 'Baja' | 'Media' | 'Alta' | 'Sin Espuma';
 export type CarbonationType = 'Baja' | 'Media' | 'Alta';
 
 export interface AromaRadarValues {
@@ -36,7 +40,11 @@ export interface BeerTasting {
   ebc: number;
   srm: number;
   clarity: ClarityType;
+  brillante?: BrillanteType;
   foamType: FoamType;
+  foamColor?: FoamColorType;
+  foamAdherence?: FoamAdherenceType[];
+  foamPersistence?: FoamPersistenceType;
   carbonation: CarbonationType;
   aromaRadar?: AromaRadarValues;
   saborRadar?: SaborRadarValues;
@@ -99,4 +107,4 @@ export interface UserProfile {
   achievements: Achievement[];
 }
 
-export type ActiveTab = 'mis-catas' | 'estilos' | 'nueva-cata' | 'insignias' | 'perfil';
+export type ActiveTab = 'mis-catas' | 'estilos' | 'nueva-cata' | 'insignias' | 'perfil' | 'importar-bd';

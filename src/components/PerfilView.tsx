@@ -2,31 +2,42 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { UserProfile, BeerTasting, ActiveTab } from '../types';
 import { exportTastingsToCsv } from '../utils/exportCsv';
 import { evaluarInsignias } from '../utils/badgeEngine';
-import { ChapaBottleCap } from './ChapaBottleCap';
-import { getStorageUsage, isIndexedDBAvailable } from '../utils/db';
+import { getStorageUsage, isIndexedDBAvailable, clearAllTastingsFromDB } from '../utils/db';
+import { useAuth } from '../context/AuthContext';
+import { ImportDatabaseModal } from './ImportDatabaseModal';
+import { UserAccountModal } from './UserAccountModal';
 
 interface PerfilViewProps {
   profile: UserProfile;
   tastings?: BeerTasting[];
   onUpdateProfile: (updatedProfile: UserProfile) => void;
-  onExportNotion?: () => void;
+  onExportBackupJson?: () => void;
   onExportCsv?: () => void;
+  onImportTastings?: (tastings: BeerTasting[], mode: 'merge' | 'replace') => void;
   onNavigate?: (tab: ActiveTab) => void;
   onOpenWalkthrough?: () => void;
+  onClearAllData?: () => Promise<{ localCount: number; cloudCount: number }>;
 }
 
 export const PerfilView: React.FC<PerfilViewProps> = ({
   profile,
   tastings = [],
   onUpdateProfile,
-  onExportNotion,
+  onExportBackupJson,
   onExportCsv,
+  onImportTastings,
   onNavigate,
   onOpenWalkthrough,
+  onClearAllData,
 }) => {
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const { user } = useAuth();
+  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [isEditingModalOpen, setIsEditingModalOpen] = useState(false);
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isDeleteDbModalOpen, setIsDeleteDbModalOpen] = useState(false);
+  const [isDeletingDb, setIsDeletingDb] = useState(false);
+  const [hasAcceptedDeleteWarning, setHasAcceptedDeleteWarning] = useState(false);
   const [storageInfo, setStorageInfo] = useState<{
     quotaMB: number;
     usageMB: number;
@@ -39,7 +50,6 @@ export const PerfilView: React.FC<PerfilViewProps> = ({
   const [editTitle, setEditTitle] = useState(profile.title);
   const [editBio, setEditBio] = useState(profile.bio);
   const [editFavBrewery, setEditFavBrewery] = useState(profile.stats.favoriteBrewery);
-  const [notionConnected, setNotionConnected] = useState(false);
   const [showToast, setShowToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -76,14 +86,38 @@ export const PerfilView: React.FC<PerfilViewProps> = ({
     triggerToast('¡Perfil actualizado con éxito!');
   };
 
-  const handleNotionSync = () => {
-    setNotionConnected(!notionConnected);
-    if (onExportNotion) onExportNotion();
+  const handleImportComplete = (importedTastings: BeerTasting[], mode: 'merge' | 'replace') => {
+    if (onImportTastings) {
+      onImportTastings(importedTastings, mode);
+    }
     triggerToast(
-      !notionConnected
-        ? '¡Sincronizado con Notion! TUS catas se han preparado para exportar.'
-        : 'Desconectado de Notion.'
+      mode === 'replace'
+        ? `¡Base de datos reemplazada con éxito (${importedTastings.length} catas)!`
+        : `¡${importedTastings.length} nuevas catas añadidas a tu diario!`
     );
+  };
+
+  const handleConfirmDeleteDatabases = async () => {
+    if (!hasAcceptedDeleteWarning) return;
+    setIsDeletingDb(true);
+    try {
+      if (onClearAllData) {
+        await onClearAllData();
+      } else {
+        await clearAllTastingsFromDB();
+        try {
+          localStorage.removeItem('diario_cervecero_catas');
+        } catch {}
+      }
+      setIsDeleteDbModalOpen(false);
+      triggerToast('✓ Todas las bases de datos (local y nube) han sido eliminadas.');
+    } catch (err: any) {
+      console.error('Error al eliminar bases de datos:', err);
+      triggerToast('Error al eliminar las bases de datos.');
+    } finally {
+      setIsDeletingDb(false);
+      setHasAcceptedDeleteWarning(false);
+    }
   };
 
   const allBadges = useMemo(() => evaluarInsignias(tastings), [tastings]);
@@ -102,14 +136,6 @@ export const PerfilView: React.FC<PerfilViewProps> = ({
     if (tastings.length === 0) return profile.stats.totalEstilos;
     return new Set(tastings.map((t) => t.style?.toLowerCase().trim()).filter(Boolean)).size;
   }, [tastings, profile.stats.totalEstilos]);
-
-  const handleOpenInsignias = () => {
-    if (onNavigate) {
-      onNavigate('insignias');
-    } else {
-      triggerToast(`Tienes ${unlockedBadges.length} de ${allBadges.length} insignias desbloqueadas.`);
-    }
-  };
 
   return (
     <div className="flex flex-col w-full gap-6 pb-28 max-w-lg mx-auto animate-fade-in">
@@ -160,6 +186,44 @@ export const PerfilView: React.FC<PerfilViewProps> = ({
         </div>
       </div>
 
+      {/* Cloud & User Account Banner */}
+      <div
+        onClick={() => setIsAccountModalOpen(true)}
+        className="bg-gradient-to-r from-[#1e2020] to-[#252828] p-4 rounded-2xl border border-white/10 hover:border-[#fbad18]/50 transition-all cursor-pointer shadow-md flex items-center justify-between group active:scale-[0.99]"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-[#fbad18]/15 border border-[#fbad18]/30 flex items-center justify-center text-[#ffd18f] group-hover:bg-[#fbad18] group-hover:text-[#121414] transition-colors shrink-0">
+            <span className="material-symbols-outlined text-xl">cloud_sync</span>
+          </div>
+          <div className="flex flex-col min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-[#e2e2e2] group-hover:text-[#ffd18f] transition-colors truncate">
+                {user ? 'Cuenta Cloud Activa' : 'Cuenta de Usuario y Nube'}
+              </span>
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-[#fbad18]/15 border border-[#fbad18]/30 text-[#ffd18f] shrink-0">
+                SPARK GRATIS
+              </span>
+            </div>
+            <span className="text-[11px] text-[#9f8e79] truncate mt-0.5">
+              {user ? `${user.email} • Firestore Sincronizado` : 'Conectar con Google para respaldo en la nube'}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0 ml-2">
+          {user ? (
+            <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-mono font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              ONLINE
+            </span>
+          ) : (
+            <span className="text-[11px] font-semibold text-[#ffd18f] group-hover:underline">Conectar</span>
+          )}
+          <span className="material-symbols-outlined text-[#9f8e79] group-hover:text-[#ffd18f] text-lg">
+            chevron_right
+          </span>
+        </div>
+      </div>
+
       {/* Stats Bento Grid */}
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-[#282a2b] p-4 rounded-2xl flex flex-col justify-between shadow-sm border border-white/5">
@@ -197,43 +261,6 @@ export const PerfilView: React.FC<PerfilViewProps> = ({
         </div>
       </div>
 
-      {/* Achievements / Insignias Section */}
-      <section className="flex flex-col gap-3">
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-2">
-            <h2 className="font-serif text-2xl font-bold text-[#e2e2e2]">Insignias de Cata</h2>
-            <span className="px-2 py-0.5 bg-[#fbad18]/15 border border-[#fbad18]/30 text-[#ffd18f] text-[11px] font-mono font-bold rounded-md">
-              {unlockedBadges.length} / {allBadges.length}
-            </span>
-          </div>
-          <button
-            onClick={handleOpenInsignias}
-            className="text-xs font-bold text-[#ffd18f] hover:underline flex items-center gap-0.5"
-          >
-            <span>Ver todas</span>
-            <span className="material-symbols-outlined text-sm">chevron_right</span>
-          </button>
-        </div>
-
-        <div className="flex gap-4 overflow-x-auto pb-2 -mx-5 px-5 no-scrollbar">
-          {allBadges.slice(0, 10).map((badge) => (
-            <div
-              key={badge.id}
-              onClick={handleOpenInsignias}
-              className="flex-shrink-0 w-20 flex flex-col items-center gap-1.5 cursor-pointer transition-transform active:scale-95 group"
-            >
-              <ChapaBottleCap insignia={badge} size={60} />
-              <span className="text-[11px] font-medium text-center text-[#e2e2e2] leading-tight line-clamp-1 group-hover:text-[#ffd18f] transition-colors">
-                {badge.nombre}
-              </span>
-              <span className="text-[9px] font-mono text-[#a89680]">
-                {badge.unlocked ? 'Desbloqueada' : `${badge.current}/${badge.target}`}
-              </span>
-            </div>
-          ))}
-        </div>
-      </section>
-
       {/* Settings Section */}
       <section className="flex flex-col gap-2.5">
         <h2 className="text-xs font-bold text-[#d7c4ad] uppercase tracking-widest px-1">
@@ -241,27 +268,36 @@ export const PerfilView: React.FC<PerfilViewProps> = ({
         </h2>
 
         <div className="bg-[#1a1c1c] rounded-2xl overflow-hidden border border-white/5">
-          {/* Base de Datos Local (IndexedDB) */}
+          {/* Cuenta y Nube (Firestore) */}
           <button
-            onClick={() => setIsDbModalOpen(true)}
+            onClick={() => setIsAccountModalOpen(true)}
             className="w-full flex items-center justify-between p-4 hover:bg-[#282a2b] transition-colors text-left group"
           >
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-8 h-8 rounded-lg bg-[#7ef24a]/15 border border-[#7ef24a]/30 flex items-center justify-center text-[#7ef24a] group-hover:bg-[#7ef24a] group-hover:text-[#121414] transition-colors shrink-0">
-                <span className="material-symbols-outlined text-lg">database</span>
+              <div className="w-8 h-8 rounded-lg bg-[#fbad18]/15 border border-[#fbad18]/30 flex items-center justify-center text-[#ffd18f] group-hover:bg-[#fbad18] group-hover:text-[#121414] transition-colors shrink-0">
+                <span className="material-symbols-outlined text-lg">manage_accounts</span>
               </div>
               <div className="flex flex-col min-w-0">
                 <span className="text-sm font-medium text-[#e2e2e2] group-hover:text-[#ffd18f] transition-colors">
-                  Base de Datos Local
+                  Cuenta y Nube (Firestore)
                 </span>
                 <span className="text-[11px] text-[#9f8e79] truncate">
-                  IndexedDB Activo • Capacidad ilimitada para fotos y catas
+                  {user ? `${user.email} • Plan Spark Gratuito` : 'Iniciar sesión con Google para sincronización'}
                 </span>
               </div>
             </div>
-            <span className="px-2 py-0.5 bg-[#7ef24a]/15 border border-[#7ef24a]/30 text-[#7ef24a] text-[10px] font-mono font-bold rounded-md uppercase tracking-wider ml-2 shrink-0">
-              INDEXEDDB
-            </span>
+            <div className="flex items-center gap-1.5 shrink-0 ml-2">
+              <span
+                className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded-md uppercase tracking-wider border ${
+                  user
+                    ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                    : 'bg-[#fbad18]/15 border-[#fbad18]/40 text-[#ffd18f]'
+                }`}
+              >
+                {user ? 'CONECTADO' : 'CONECTAR'}
+              </span>
+              <span className="material-symbols-outlined text-[#d7c4ad] text-xl">chevron_right</span>
+            </div>
           </button>
 
           <div className="mx-4 h-[1px] bg-white/5" />
@@ -295,13 +331,38 @@ export const PerfilView: React.FC<PerfilViewProps> = ({
           {/* Editar Perfil */}
           <button
             onClick={() => setIsEditingModalOpen(true)}
-            className="w-full flex items-center justify-between p-4 hover:bg-[#282a2b] transition-colors text-left"
+            className="w-full flex items-center justify-between p-4 hover:bg-[#282a2b] transition-colors text-left group"
           >
             <div className="flex items-center gap-3">
               <span className="material-symbols-outlined text-[#d7c4ad]">edit</span>
               <span className="text-sm font-medium text-[#e2e2e2]">Editar Perfil</span>
             </div>
             <span className="material-symbols-outlined text-[#d7c4ad] text-xl">chevron_right</span>
+          </button>
+
+          <div className="mx-4 h-[1px] bg-white/5" />
+
+          {/* Base de Datos Local (IndexedDB) */}
+          <button
+            onClick={() => setIsDbModalOpen(true)}
+            className="w-full flex items-center justify-between p-4 hover:bg-[#282a2b] transition-colors text-left group"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-[#fbad18]/15 border border-[#fbad18]/30 flex items-center justify-center text-[#ffd18f] group-hover:bg-[#fbad18] group-hover:text-[#121414] transition-colors shrink-0">
+                <span className="material-symbols-outlined text-lg">database</span>
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-sm font-medium text-[#e2e2e2] group-hover:text-[#ffd18f] transition-colors">
+                  Base de Datos Local
+                </span>
+                <span className="text-[11px] text-[#9f8e79] truncate">
+                  IndexedDB Activo • Capacidad ilimitada para fotos y catas
+                </span>
+              </div>
+            </div>
+            <span className="px-2 py-0.5 bg-[#fbad18]/15 border border-[#fbad18]/40 text-[#ffd18f] text-[10px] font-mono font-bold rounded-md uppercase tracking-wider ml-2 shrink-0">
+              INDEXEDDB
+            </span>
           </button>
 
           <div className="mx-4 h-[1px] bg-white/5" />
@@ -331,69 +392,71 @@ export const PerfilView: React.FC<PerfilViewProps> = ({
 
           <div className="mx-4 h-[1px] bg-white/5" />
 
-          {/* Conectar Notion */}
+          {/* Importar Base de Datos */}
           <button
-            onClick={handleNotionSync}
-            className="w-full flex items-center justify-between p-4 hover:bg-[#282a2b] transition-colors text-left"
+            onClick={() => {
+              if (onNavigate) onNavigate('importar-bd');
+            }}
+            className="w-full flex items-center justify-between p-4 hover:bg-[#282a2b] transition-colors text-left group"
           >
-            <div className="flex items-center gap-3">
-              <div className="w-5 h-5 flex items-center justify-center">
-                <svg className="w-4 h-4 fill-[#e2e2e2]" viewBox="0 0 24 24">
-                  <path d="M4.459 4.208c.746.606 1.026.56 2.428.466l10.551-.7c1.353-.093 1.493.046 1.167.98l-.28 1.026c-.187.607-.14 1.167.373 1.167.42 0 .933-.373 1.167-.887.233-.466.233-.886.233-1.4 0-1.633-1.074-2.333-3.08-2.24l-11.298.747c-1.353.093-2.007-.047-2.52.42-.513.467-.653.98-.653 2.1l-.046 13.16c0 1.213.606 1.82 1.82 1.82l13.066.047c1.353 0 1.867-.653 1.867-1.82v-9.333c0-1.213-.607-1.82-1.82-1.82H6.606l2.333 4.807 4.2-1.026c.747-.187 1.167.14 1.167.84a1.074 1.074 0 0 1-1.027 1.027l-5.46.746c-.747.094-1.26-.373-1.54-.98L4.459 4.208z" />
-                </svg>
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-[#fbad18]/15 border border-[#fbad18]/30 flex items-center justify-center text-[#ffd18f] group-hover:bg-[#fbad18] group-hover:text-[#121414] transition-colors shrink-0">
+                <span className="material-symbols-outlined text-lg">upload</span>
               </div>
-              <span className="text-sm font-medium text-[#e2e2e2]">
-                {notionConnected ? 'Notion Conectado ✓' : 'Conectar Notion'}
+              <div className="flex flex-col min-w-0">
+                <span className="text-sm font-medium text-[#e2e2e2] group-hover:text-[#ffd18f] transition-colors">
+                  Importar Base de Datos
+                </span>
+                <span className="text-[11px] text-[#9f8e79] truncate">
+                  Importar archivo .csv o .json (Notion, Untappd, Excel)
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0 ml-2">
+              <span className="px-2 py-0.5 bg-[#fbad18]/15 border border-[#fbad18]/40 text-[#ffd18f] text-[10px] font-mono font-bold rounded-md uppercase tracking-wider">
+                .CSV / .JSON
+              </span>
+              <span className="material-symbols-outlined text-base text-[#9f8e79] group-hover:text-[#ffd18f] transition-colors">
+                chevron_right
               </span>
             </div>
-            <span
-              className={`material-symbols-outlined text-xl ${
-                notionConnected ? 'text-[#7ef24a]' : 'text-[#fbad18]'
-              }`}
-            >
-              {notionConnected ? 'check_circle' : 'link'}
-            </span>
           </button>
 
           <div className="mx-4 h-[1px] bg-white/5" />
 
-          {/* Notificaciones */}
-          <div className="flex items-center justify-between p-4">
-            <div className="flex items-center gap-3">
-              <span className="material-symbols-outlined text-[#d7c4ad]">notifications</span>
-              <span className="text-sm font-medium text-[#e2e2e2]">Notificaciones</span>
+          {/* Eliminar Bases de Datos */}
+          <button
+            type="button"
+            onClick={() => {
+              setHasAcceptedDeleteWarning(false);
+              setIsDeleteDbModalOpen(true);
+            }}
+            className="w-full flex items-center justify-between p-4 hover:bg-red-500/10 transition-colors text-left group"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400 group-hover:bg-red-500 group-hover:text-white transition-colors shrink-0">
+                <span className="material-symbols-outlined text-lg">delete_forever</span>
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-sm font-medium text-red-300 group-hover:text-red-200 transition-colors">
+                  Eliminar Bases de Datos
+                </span>
+                <span className="text-[11px] text-[#9f8e79] truncate">
+                  Borrar catas en local (IndexedDB) y en la nube (Firestore)
+                </span>
+              </div>
             </div>
-            <button
-              onClick={() => {
-                setNotificationsEnabled(!notificationsEnabled);
-                triggerToast(
-                  !notificationsEnabled ? 'Notificaciones activadas' : 'Notificaciones desactivadas'
-                );
-              }}
-              className={`w-11 h-6 rounded-full relative transition-colors ${
-                notificationsEnabled ? 'bg-[#fbad18]' : 'bg-[#333535]'
-              }`}
-            >
-              <div
-                className={`absolute top-1 w-4 h-4 rounded-full transition-transform ${
-                  notificationsEnabled
-                    ? 'right-1 bg-[#684500]'
-                    : 'left-1 bg-[#d7c4ad]'
-                }`}
-              />
-            </button>
-          </div>
+            <div className="flex items-center gap-1.5 shrink-0 ml-2">
+              <span className="px-2 py-0.5 bg-red-500/15 border border-red-500/30 text-red-400 text-[10px] font-mono font-bold rounded-md uppercase tracking-wider">
+                LOCAL + NUBE
+              </span>
+              <span className="material-symbols-outlined text-red-400/70 text-xl group-hover:text-red-400 transition-colors">
+                chevron_right
+              </span>
+            </div>
+          </button>
         </div>
       </section>
-
-      {/* Logout Button */}
-      <button
-        onClick={() => triggerToast('Sesión mantenida en almacenamiento local.')}
-        className="w-full py-3.5 text-red-400 hover:text-red-300 font-bold text-xs uppercase tracking-widest flex items-center justify-center gap-2 mt-2 active:scale-95 transition-all"
-      >
-        <span className="material-symbols-outlined text-base">logout</span>
-        Cerrar Sesión
-      </button>
 
       {/* Edit Profile Modal */}
       {isEditingModalOpen && (
@@ -503,11 +566,23 @@ export const PerfilView: React.FC<PerfilViewProps> = ({
                   <span className="font-mono text-[#e2e2e2] font-bold">{tastings.length} registradas</span>
                 </div>
                 <div className="flex justify-between items-center text-xs">
-                  <span className="text-[#9f8e79]">Capacidad para Fotografías:</span>
-                  <span className="text-[#ffd18f] font-semibold">Ilimitada (Multi-foto HD)</span>
+                  <span className="text-[#9f8e79]">Compresión de Fotos:</span>
+                  <span className="text-emerald-400 font-semibold font-mono">~90-150 KB / foto (Auto)</span>
                 </div>
-                {storageInfo && storageInfo.quotaMB > 0 && (
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-[#9f8e79]">Capacidad para Fotografías:</span>
+                  <span className="text-[#ffd18f] font-semibold">Ilimitada (IndexedDB)</span>
+                </div>
+                {storageInfo && (
                   <div className="flex justify-between items-center text-xs pt-1 border-t border-white/5">
+                    <span className="text-[#9f8e79]">Espacio Actual Utilizado:</span>
+                    <span className="font-mono text-emerald-400 font-bold">
+                      {storageInfo.usageMB > 0 ? `${storageInfo.usageMB} MB` : '< 1 MB'}
+                    </span>
+                  </div>
+                )}
+                {storageInfo && storageInfo.quotaMB > 0 && (
+                  <div className="flex justify-between items-center text-xs">
                     <span className="text-[#9f8e79]">Cuota Estimada del Dispositivo:</span>
                     <span className="font-mono text-[#9f8e79]">~{storageInfo.quotaMB} MB disponibles</span>
                   </div>
@@ -517,30 +592,175 @@ export const PerfilView: React.FC<PerfilViewProps> = ({
               <div className="p-3 bg-[#fbad18]/10 border border-[#fbad18]/20 rounded-xl text-xs text-[#ffd18f] flex items-start gap-2.5">
                 <span className="material-symbols-outlined text-base text-[#fbad18] shrink-0 mt-0.5">verified_user</span>
                 <p className="leading-relaxed">
-                  Tus notas de cata y fotografías se guardan en <strong>IndexedDB</strong>, superando el límite de 5 MB de LocalStorage y garantizando funcionamiento completo 100% offline.
+                  Tus notas y fotografías se comprimen al vuelo a 1000px y se almacenan en <strong>IndexedDB</strong> (~90-150 KB por foto en lugar de 5-10 MB), garantizando miles de catas 100% offline sin saturar la memoria.
                 </p>
               </div>
             </div>
 
-            <div className="pt-2 flex flex-col sm:flex-row gap-2.5">
+            <div className="pt-2 flex flex-col gap-2.5">
               <button
                 type="button"
                 onClick={() => {
-                  if (onExportNotion) onExportNotion();
-                  triggerToast('¡Copia de seguridad en JSON descargada!');
+                  setIsDbModalOpen(false);
+                  if (onNavigate) onNavigate('importar-bd');
                 }}
-                className="flex-1 py-3 px-3 bg-[#282a2b] hover:bg-[#333535] text-[#ffd18f] rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 border border-white/10 active:scale-95 transition-all"
+                className="w-full py-3 px-3 bg-[#fbad18]/20 hover:bg-[#fbad18]/30 border border-[#fbad18]/40 text-[#ffd18f] rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 active:scale-95 transition-all"
               >
-                <span className="material-symbols-outlined text-base">file_download</span>
-                Backup JSON
+                <span className="material-symbols-outlined text-base">upload</span>
+                Importar Base de Datos (.CSV / .JSON)
               </button>
+
+              <div className="flex flex-col sm:flex-row gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onExportBackupJson) onExportBackupJson();
+                    triggerToast('¡Copia de seguridad en JSON descargada!');
+                  }}
+                  className="flex-1 py-3 px-3 bg-[#282a2b] hover:bg-[#333535] text-[#ffd18f] rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 border border-white/10 active:scale-95 transition-all"
+                >
+                  <span className="material-symbols-outlined text-base">file_download</span>
+                  Backup JSON
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportCsv}
+                  className="flex-1 py-3 px-3 bg-[#fbad18] hover:bg-[#ffbe3b] text-[#684500] rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                >
+                  <span className="material-symbols-outlined text-base">table_view</span>
+                  Exportar CSV
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Importar Base de Datos */}
+      <ImportDatabaseModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onImportComplete={handleImportComplete}
+        existingCount={tastings.length}
+      />
+
+      {/* Modal de Cuenta de Usuario y Nube Firestore */}
+      <UserAccountModal
+        isOpen={isAccountModalOpen}
+        onClose={() => setIsAccountModalOpen(false)}
+        profile={profile}
+        tastings={tastings}
+        onUpdateProfile={onUpdateProfile}
+        onShowToast={triggerToast}
+      />
+
+      {/* Modal: Eliminar Bases de Datos (Confirmación & Recordatorio) */}
+      {isDeleteDbModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in">
+          <div className="w-full max-w-md bg-[#1e2020] border border-red-500/30 rounded-2xl p-6 space-y-4 shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2.5 text-red-400">
+                <div className="w-9 h-9 rounded-xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400">
+                  <span className="material-symbols-outlined text-xl">delete_forever</span>
+                </div>
+                <div>
+                  <h3 className="font-serif text-lg font-bold text-white">Eliminar Bases de Datos</h3>
+                  <p className="text-[11px] text-[#9f8e79]">Borrado irreversible local y en la nube</p>
+                </div>
+              </div>
               <button
                 type="button"
-                onClick={handleExportCsv}
-                className="flex-1 py-3 px-3 bg-[#fbad18] hover:bg-[#ffbe3b] text-[#684500] rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                onClick={() => !isDeletingDb && setIsDeleteDbModalOpen(false)}
+                disabled={isDeletingDb}
+                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-[#d7c4ad] flex items-center justify-center disabled:opacity-30"
               >
-                <span className="material-symbols-outlined text-base">table_view</span>
-                Exportar CSV
+                <span className="material-symbols-outlined text-base">close</span>
+              </button>
+            </div>
+
+            {/* RECORDATORIO IMPORTANTE */}
+            <div className="p-3.5 bg-red-950/60 border border-red-500/40 rounded-xl space-y-2 text-red-200">
+              <div className="flex items-center gap-2 text-xs font-bold text-red-300 tracking-wide uppercase">
+                <span className="material-symbols-outlined text-base text-red-400 animate-pulse">warning</span>
+                <span>Recordatorio Importante</span>
+              </div>
+              <p className="text-xs leading-relaxed text-red-200/95">
+                Estás a punto de eliminar <strong>definitivamente todos los datos</strong> de tu diario cervecero. Esta operación es <strong>permanente y no se puede deshacer</strong>.
+              </p>
+            </div>
+
+            {/* Desglose de lo que se va a borrar */}
+            <div className="bg-[#121414] p-3.5 rounded-xl border border-white/5 space-y-2.5 text-xs">
+              <div className="flex items-start gap-2.5 text-[#e2e2e2]">
+                <span className="material-symbols-outlined text-[#ffd18f] text-base shrink-0 mt-0.5">database</span>
+                <div>
+                  <span className="font-semibold block text-[#ffd18f]">Base de Datos Local (IndexedDB)</span>
+                  <span className="text-[11px] text-[#9f8e79]">
+                    Se vaciarán todas las <strong>{tastings.length} catas</strong>, notas de degustación y fotografías guardadas en este dispositivo.
+                  </span>
+                </div>
+              </div>
+
+              <div className="h-[1px] bg-white/5" />
+
+              <div className="flex items-start gap-2.5 text-[#e2e2e2]">
+                <span className="material-symbols-outlined text-sky-400 text-base shrink-0 mt-0.5">cloud</span>
+                <div>
+                  <span className="font-semibold block text-sky-300">Base de Datos en la Nube (Firestore)</span>
+                  <span className="text-[11px] text-[#9f8e79]">
+                    {user ? (
+                      <>Se eliminarán permanentemente todas las catas sincronizadas en tu cuenta <strong>{user.email}</strong>.</>
+                    ) : (
+                      <>No hay sesión activa de Google en la nube. Se limpiará el almacenamiento local del dispositivo.</>
+                    )}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Checkbox de confirmación expresa */}
+            <label className="flex items-start gap-2.5 p-2.5 bg-[#121414] rounded-xl border border-white/5 cursor-pointer hover:border-white/10 transition-colors">
+              <input
+                type="checkbox"
+                checked={hasAcceptedDeleteWarning}
+                onChange={(e) => setHasAcceptedDeleteWarning(e.target.checked)}
+                disabled={isDeletingDb}
+                className="mt-0.5 rounded border-white/20 text-red-500 focus:ring-red-400 focus:ring-offset-0 bg-[#1e2020] cursor-pointer"
+              />
+              <span className="text-xs text-[#d7c4ad] select-none leading-snug">
+                He leído el recordatorio y confirmo que deseo <strong>eliminar todos los datos definitivamente</strong> sin posibilidad de recuperación.
+              </span>
+            </label>
+
+            {/* Botones de Acción */}
+            <div className="pt-2 flex flex-col gap-2">
+              <button
+                type="button"
+                disabled={!hasAcceptedDeleteWarning || isDeletingDb}
+                onClick={handleConfirmDeleteDatabases}
+                className="w-full py-3 px-4 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
+              >
+                {isDeletingDb ? (
+                  <>
+                    <span className="material-symbols-outlined text-base animate-spin">refresh</span>
+                    <span>Eliminando bases de datos...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-base">delete_forever</span>
+                    <span>Eliminar Definitivamente Todas las Bases de Datos</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                disabled={isDeletingDb}
+                onClick={() => setIsDeleteDbModalOpen(false)}
+                className="w-full py-2.5 text-xs text-[#d7c4ad] hover:text-white font-medium transition-colors cursor-pointer"
+              >
+                Cancelar y conservar mis catas
               </button>
             </div>
           </div>

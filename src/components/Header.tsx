@@ -33,7 +33,7 @@ export const Header: React.FC<HeaderProps> = ({
       case 'insignias':
         return 'Insignias';
       case 'perfil':
-        return 'Perfil';
+        return 'Ajustes';
       default:
         return 'Diario del Cervecero';
     }
@@ -98,7 +98,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={() => onNavigate('perfil')}
             className="relative group focus:outline-none"
-            title="Ver Perfil"
+            title="Ajustes"
           >
             <img
               src={userProfile.avatarUrl}

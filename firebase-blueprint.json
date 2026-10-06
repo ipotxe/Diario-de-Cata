@@ -1,0 +1,163 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile and tasting preferences",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth user ID",
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "description": "User display name",
+          "maxLength": 100
+        },
+        "email": {
+          "type": "string",
+          "description": "User email address",
+          "maxLength": 150
+        },
+        "bio": {
+          "type": "string",
+          "description": "Short bio or tagline",
+          "maxLength": 300
+        },
+        "title": {
+          "type": "string",
+          "description": "Sommelier / Brewer title",
+          "maxLength": 100
+        },
+        "avatarUrl": {
+          "type": "string",
+          "description": "Avatar image URL",
+          "maxLength": 500
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last update"
+        }
+      },
+      "required": ["uid", "name", "email"]
+    },
+    "BeerTasting": {
+      "title": "BeerTasting",
+      "description": "A single beer tasting evaluation log with sensory radar and photos",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Tasting unique identifier",
+          "maxLength": 128
+        },
+        "userId": {
+          "type": "string",
+          "description": "Owner user UID",
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "description": "Beer name",
+          "maxLength": 120
+        },
+        "brewery": {
+          "type": "string",
+          "description": "Brewery or producer name",
+          "maxLength": 120
+        },
+        "country": {
+          "type": "string",
+          "description": "Country of origin",
+          "maxLength": 80
+        },
+        "abv": {
+          "type": "number",
+          "description": "Alcohol By Volume percentage"
+        },
+        "style": {
+          "type": "string",
+          "description": "BJCP or commercial style name",
+          "maxLength": 100
+        },
+        "ibu": {
+          "type": "number",
+          "description": "International Bitterness Units"
+        },
+        "ebc": {
+          "type": "number",
+          "description": "European Brewery Convention color scale"
+        },
+        "srm": {
+          "type": "number",
+          "description": "Standard Reference Method color scale"
+        },
+        "clarity": {
+          "type": "string",
+          "description": "Visual clarity assessment",
+          "maxLength": 50
+        },
+        "brillante": {
+          "type": "string",
+          "description": "Visual brightness",
+          "maxLength": 50
+        },
+        "foamType": {
+          "type": "string",
+          "description": "Foam texture type",
+          "maxLength": 50
+        },
+        "foamColor": {
+          "type": "string",
+          "description": "Foam color",
+          "maxLength": 50
+        },
+        "foamPersistence": {
+          "type": "string",
+          "description": "Foam persistence rating",
+          "maxLength": 50
+        },
+        "carbonation": {
+          "type": "string",
+          "description": "Perceived carbonation level",
+          "maxLength": 50
+        },
+        "rating": {
+          "type": "number",
+          "description": "Overall rating score from 1 to 5"
+        },
+        "notes": {
+          "type": "string",
+          "description": "General sommelier tasting notes",
+          "maxLength": 3000
+        },
+        "pairing": {
+          "type": "string",
+          "description": "Gastronomic pairing notes",
+          "maxLength": 500
+        },
+        "imageUrl": {
+          "type": "string",
+          "description": "Primary photo URL or compressed image data",
+          "maxLength": 500000
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp ISO string"
+        }
+      },
+      "required": ["id", "userId", "name", "brewery", "style", "rating", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User account document containing profile settings and metadata"
+    },
+    "/users/{userId}/tastings/{tastingId}": {
+      "schema": "BeerTasting",
+      "description": "User's saved beer tastings and tasting evaluations"
+    }
+  }
+}

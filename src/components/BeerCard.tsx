@@ -50,16 +50,17 @@ export const BeerCard: React.FC<BeerCardProps> = ({ beer, onClick, index = 0 }) 
       onClick={() => onClick(beer)}
       className="bg-[#282a2b] rounded-xl overflow-hidden shadow-md border border-white/5 flex active:scale-[0.98] transition-all cursor-pointer group hover:border-[#fbad18]/30"
     >
-      {/* Left Thumbnail */}
-      <div className="w-28 h-auto min-h-[110px] relative overflow-hidden bg-[#121414] shrink-0">
+      {/* Left Thumbnail (Minimum viable size without distortion) */}
+      <div className="w-20 sm:w-22 min-w-[76px] self-stretch relative overflow-hidden bg-[#121414] shrink-0">
         <img
           src={(beer.images && beer.images.length > 0) ? beer.images[0] : beer.imageUrl}
           alt={beer.name}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+          className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
+          loading="lazy"
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-transparent to-[#282a2b]/60" />
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent to-[#282a2b]/60 pointer-events-none" />
         {beer.images && beer.images.length > 1 && (
-          <span className="absolute bottom-1.5 left-1.5 bg-black/70 backdrop-blur-sm text-[#ffd18f] text-[9px] font-mono font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5 border border-white/10">
+          <span className="absolute bottom-1.5 left-1.5 bg-black/75 backdrop-blur-sm text-[#ffd18f] text-[9px] font-mono font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5 border border-white/10 shadow-sm">
             <span className="material-symbols-outlined text-[10px]">photo_library</span>
             {beer.images.length}
           </span>
@@ -67,7 +68,7 @@ export const BeerCard: React.FC<BeerCardProps> = ({ beer, onClick, index = 0 }) 
       </div>
 
       {/* Info Content */}
-      <div className="flex-1 p-3.5 flex flex-col justify-between min-w-0">
+      <div className="flex-1 p-3 sm:p-3.5 flex flex-col justify-between min-w-0">
         {/* Línea 1: Nombre principal de la cerveza */}
         <div className="flex justify-between items-start gap-2">
           <h3 className="font-serif text-[19px] font-bold text-[#ffd18f] truncate leading-tight group-hover:text-[#fbad18] min-w-0 flex-1">

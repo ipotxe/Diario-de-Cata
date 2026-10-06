@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { srmToHex } from '../data/initialData';
 import {
   BJCP_STYLE_CATEGORIES,
@@ -6,10 +6,11 @@ import {
   getStyleOfTheDay,
   getRandomStyle,
 } from '../data/bjcpStyleDetails';
-import { StyleDetail } from '../types';
+import { StyleDetail, ActiveTab } from '../types';
 
 interface EstilosViewProps {
   onStartNewCataWithStyle?: (styleName: string) => void;
+  onNavigate?: (tab: ActiveTab) => void;
 }
 
 const SRM_STYLES_MAP = [
@@ -24,17 +25,28 @@ const SRM_STYLES_MAP = [
   { srm: 40, ebc: 80, name: 'Imperial Stout / Black IPA', hex: '#080707' },
 ];
 
-export const EstilosView: React.FC<EstilosViewProps> = ({ onStartNewCataWithStyle }) => {
+export const EstilosView: React.FC<EstilosViewProps> = ({ onStartNewCataWithStyle, onNavigate }) => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStyleModal, setSelectedStyleModal] = useState<StyleDetail | null>(null);
   const [explorerSRM, setExplorerSRM] = useState(8);
 
-  // Style of the day initialized deterministically by date
+  // Ref for the "Todos los Estilos BJCP" section to scroll to on search submit
+  const stylesListRef = useRef<HTMLElement | null>(null);
+
+  // Style of the day viewer
   const [styleOfTheDay, setStyleOfTheDay] = useState<StyleDetail>(() => getStyleOfTheDay());
+  const [showStyleOfTheDayModal, setShowStyleOfTheDayModal] = useState(false);
 
   const handleShuffleDaily = () => {
     setStyleOfTheDay(getRandomStyle(styleOfTheDay.id));
+  };
+
+  const handleSearchSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setTimeout(() => {
+      stylesListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
   };
 
   const getSRMStyleMatch = (val: number) => {
@@ -143,6 +155,37 @@ export const EstilosView: React.FC<EstilosViewProps> = ({ onStartNewCataWithStyl
 
   return (
     <div className="flex flex-col w-full gap-6 pb-24 max-w-lg mx-auto">
+      {/* Botón de acceso a Estilo del Día */}
+      <div className="bg-[#1e2020] rounded-2xl p-3 border border-white/5 shadow-md flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-[#fbad18]/15 border border-[#fbad18]/30 flex items-center justify-center text-[#fbad18] shrink-0">
+            <span className="material-symbols-outlined text-2xl">today</span>
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-black uppercase px-1.5 py-0.5 bg-[#fbad18] text-[#684500] rounded">
+                Estilo del Día
+              </span>
+              <span className="text-xs font-bold text-white truncate">
+                {styleOfTheDay.code} · {styleOfTheDay.name}
+              </span>
+            </div>
+            <p className="text-[11px] text-[#d7c4ad] truncate mt-0.5">
+              Descubre la recomendación cervecera de hoy
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowStyleOfTheDayModal(true)}
+          className="px-3.5 py-2 bg-[#fbad18] hover:bg-[#ffbe3b] text-[#684500] font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-all flex items-center gap-1.5 shrink-0 active:scale-95"
+        >
+          <span className="material-symbols-outlined text-base">visibility</span>
+          <span>Ver</span>
+        </button>
+      </div>
+
       {/* Header Banner & Search */}
       <section className="flex flex-col gap-3">
         <div className="flex justify-between items-center px-1">
@@ -158,150 +201,34 @@ export const EstilosView: React.FC<EstilosViewProps> = ({ onStartNewCataWithStyl
         </div>
 
         {/* Search Input */}
-        <div className="relative">
-          <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-[#9f8e79] text-xl">
+        <form onSubmit={handleSearchSubmit} className="relative">
+          <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-[#9f8e79] text-xl pointer-events-none">
             search
           </span>
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                (e.target as HTMLInputElement).blur();
+                handleSearchSubmit();
+              }
+            }}
             placeholder="Buscar estilo (ej. 21A, Hazy IPA, Pils, Stout, Trigo)..."
             className="w-full h-11 pl-11 pr-9 bg-[#1e2020] rounded-xl text-[#e2e2e2] placeholder:text-[#524533] text-sm focus:outline-none focus:ring-1 focus:ring-[#fbad18] transition-all border border-white/5"
           />
           {searchQuery && (
             <button
+              type="button"
               onClick={() => setSearchQuery('')}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9f8e79] hover:text-white"
             >
               <span className="material-symbols-outlined text-lg">cancel</span>
             </button>
           )}
-        </div>
-      </section>
-
-      {/* ESTILO DEL DÍA (Style of the Day) */}
-      <section className="relative overflow-hidden rounded-2xl bg-[#282a2b] shadow-xl border border-white/10 group">
-        {/* Background Image Header */}
-        <div className="h-44 w-full relative overflow-hidden bg-[#121414]">
-          {styleOfTheDay.imageUrl && (
-            <img
-              src={styleOfTheDay.imageUrl}
-              alt={styleOfTheDay.name}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 opacity-75"
-            />
-          )}
-          <div className="absolute inset-0 bg-gradient-to-t from-[#282a2b] via-[#282a2b]/60 to-transparent" />
-
-          {/* Badge Top Left */}
-          <div className="absolute top-3.5 left-3.5 z-20">
-            <div className="bg-[#fbad18] text-[#684500] px-3 py-1 rounded-full flex items-center gap-1.5 shadow-lg border border-[#ffd18f]/40">
-              <span className="material-symbols-outlined text-sm font-bold">today</span>
-              <span className="text-[10px] font-black uppercase tracking-wider">Estilo del Día</span>
-            </div>
-          </div>
-
-          {/* Shuffle Button Top Right */}
-          <div className="absolute top-3.5 right-3.5 z-20">
-            <button
-              onClick={handleShuffleDaily}
-              title="Descubrir otro estilo al azar"
-              className="bg-black/60 hover:bg-[#fbad18] text-white hover:text-[#684500] p-1.5 rounded-full border border-white/15 backdrop-blur-md transition-all flex items-center justify-center shadow-lg"
-            >
-              <span className="material-symbols-outlined text-base">casino</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Content Details */}
-        <div className="p-4.5 -mt-8 relative z-20 bg-[#282a2b]/95 backdrop-blur-md mx-3.5 mb-3.5 rounded-xl border border-white/10 shadow-lg space-y-3.5">
-          <div className="flex justify-between items-start gap-2">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono font-bold bg-[#fbad18]/20 text-[#ffd18f] px-2 py-0.5 rounded border border-[#fbad18]/30">
-                  BJCP {styleOfTheDay.code}
-                </span>
-                <span className="text-[11px] text-[#d7c4ad] font-semibold uppercase tracking-wider">
-                  {styleOfTheDay.category}
-                </span>
-              </div>
-              <h2 className="font-serif text-2xl font-bold text-[#ffd18f] mt-1">
-                {styleOfTheDay.name}
-              </h2>
-            </div>
-          </div>
-
-          {/* 4 Technical Parameters: ABV, IBU, SRM, EBC */}
-          <div className="grid grid-cols-4 gap-1.5 text-center bg-[#121414] p-2.5 rounded-xl border border-white/5">
-            <div className="p-1">
-              <span className="text-[9px] font-bold text-[#9f8e79] uppercase block tracking-wider">ABV</span>
-              <span className="text-xs font-bold text-[#ffd18f]">{styleOfTheDay.abvRange}</span>
-            </div>
-            <div className="p-1 border-l border-white/5">
-              <span className="text-[9px] font-bold text-[#9f8e79] uppercase block tracking-wider">IBU</span>
-              <span className="text-xs font-bold text-[#ffd18f]">{styleOfTheDay.ibuRange}</span>
-            </div>
-            <div className="p-1 border-l border-white/5 flex flex-col items-center">
-              <span className="text-[9px] font-bold text-[#9f8e79] uppercase block tracking-wider">SRM</span>
-              <div className="flex items-center gap-1">
-                <span
-                  className="w-2.5 h-2.5 rounded-full border border-white/20"
-                  style={{ backgroundColor: srmToHex(styleOfTheDay.srm) }}
-                />
-                <span className="text-xs font-bold text-[#ffd18f]">{styleOfTheDay.srmRange}</span>
-              </div>
-            </div>
-            <div className="p-1 border-l border-white/5">
-              <span className="text-[9px] font-bold text-[#9f8e79] uppercase block tracking-wider">EBC</span>
-              <span className="text-xs font-bold text-[#ffd18f]">{styleOfTheDay.ebcRange}</span>
-            </div>
-          </div>
-
-          {/* Description */}
-          <div className="space-y-1">
-            <p className="text-xs text-[#e2e2e2] leading-relaxed">
-              {styleOfTheDay.description}
-            </p>
-          </div>
-
-          {/* Perfil de Sabor */}
-          <div className="bg-[#1e2020] p-2.5 rounded-lg border border-white/5 text-xs text-[#d7c4ad] space-y-0.5">
-            <strong className="text-[#ffd18f] flex items-center gap-1 text-[11px]">
-              <span className="material-symbols-outlined text-xs text-[#fbad18]">psychology</span>
-              Perfil de Sabor & Aroma:
-            </strong>
-            <p className="text-xs text-[#e2e2e2] leading-snug">{styleOfTheDay.flavorProfile}</p>
-          </div>
-
-          {/* Maridaje Sugerido */}
-          <div className="bg-[#1e2020] p-2.5 rounded-lg border border-white/5 text-xs text-[#d7c4ad] space-y-0.5">
-            <strong className="text-[#ffd18f] flex items-center gap-1 text-[11px]">
-              <span className="material-symbols-outlined text-xs text-[#fbad18]">restaurant</span>
-              Maridaje Sugerido:
-            </strong>
-            <p className="text-xs text-[#e2e2e2] leading-snug">{styleOfTheDay.pairingSuggestions}</p>
-          </div>
-
-          {/* Buttons */}
-          <div className="flex gap-2 pt-1">
-            <button
-              onClick={() => setSelectedStyleModal(styleOfTheDay)}
-              className="flex-1 py-2.5 bg-[#333535] hover:bg-[#3e4040] text-[#e2e2e2] font-bold text-xs uppercase tracking-wider rounded-xl border border-white/10 transition-all flex items-center justify-center gap-1.5"
-            >
-              <span className="material-symbols-outlined text-base">info</span>
-              Ficha Completa
-            </button>
-            {onStartNewCataWithStyle && (
-              <button
-                onClick={() => onStartNewCataWithStyle(`${styleOfTheDay.code}. ${styleOfTheDay.name}`)}
-                className="flex-1 py-2.5 bg-[#fbad18] hover:bg-[#ffbe3b] text-[#684500] font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-[#fbad18]/20 transition-all flex items-center justify-center gap-1.5 active:scale-95"
-              >
-                <span className="material-symbols-outlined text-base">add_circle</span>
-                Catar Estilo
-              </button>
-            )}
-          </div>
-        </div>
+        </form>
       </section>
 
       {/* Categorías BJCP Carousel / Filter */}
@@ -355,7 +282,7 @@ export const EstilosView: React.FC<EstilosViewProps> = ({ onStartNewCataWithStyl
       </section>
 
       {/* Styles List with Full Parameters */}
-      <section className="flex flex-col gap-3">
+      <section ref={stylesListRef} id="todos-los-estilos-bjcp" className="flex flex-col gap-3 scroll-mt-20">
         <div className="flex justify-between items-end px-1">
           <h3 className="text-xs font-bold text-[#d7c4ad] uppercase tracking-widest">
             {selectedCategory
@@ -626,6 +553,146 @@ export const EstilosView: React.FC<EstilosViewProps> = ({ onStartNewCataWithStyl
                 Iniciar Cata con este Estilo
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal Estilo del Día */}
+      {showStyleOfTheDayModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+          <div className="w-full max-w-md bg-[#1e2020] border border-white/10 rounded-2xl p-5 sm:p-6 space-y-4 max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl relative">
+            {/* Header */}
+            <div className="flex justify-between items-start">
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-black uppercase px-2 py-0.5 bg-[#fbad18] text-[#684500] rounded">
+                    Estilo del Día
+                  </span>
+                  <span className="text-xs font-mono font-bold px-2 py-0.5 bg-[#fbad18]/20 text-[#ffd18f] rounded border border-[#fbad18]/30">
+                    BJCP {styleOfTheDay.code}
+                  </span>
+                </div>
+                <h3 className="font-serif text-2xl font-bold text-white mt-1.5">
+                  {styleOfTheDay.name}
+                </h3>
+                <span className="text-xs text-[#d7c4ad] font-semibold">
+                  {styleOfTheDay.category}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleShuffleDaily}
+                  title="Descubrir otro estilo al azar"
+                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-[#fbad18] hover:text-[#684500] text-white flex items-center justify-center transition-all"
+                >
+                  <span className="material-symbols-outlined text-base">casino</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowStyleOfTheDayModal(false)}
+                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-all shrink-0"
+                >
+                  <span className="material-symbols-outlined text-sm">close</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Image if available */}
+            {styleOfTheDay.imageUrl && (
+              <div className="w-full h-40 rounded-xl overflow-hidden relative border border-white/10">
+                <img
+                  src={styleOfTheDay.imageUrl}
+                  alt={styleOfTheDay.name}
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+              </div>
+            )}
+
+            {/* Technical Specs: ABV, IBU, SRM, EBC */}
+            <div className="grid grid-cols-4 gap-2 text-center bg-[#121414] p-3 rounded-xl border border-white/5">
+              <div>
+                <span className="text-[10px] text-[#9f8e79] block uppercase font-bold">ABV</span>
+                <span className="text-xs font-bold text-[#ffd18f]">{styleOfTheDay.abvRange}</span>
+              </div>
+              <div className="border-l border-white/5">
+                <span className="text-[10px] text-[#9f8e79] block uppercase font-bold">IBU</span>
+                <span className="text-xs font-bold text-[#ffd18f]">{styleOfTheDay.ibuRange}</span>
+              </div>
+              <div className="border-l border-white/5 flex flex-col items-center">
+                <span className="text-[10px] text-[#9f8e79] block uppercase font-bold">SRM</span>
+                <div className="flex items-center gap-1">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full border border-white/20"
+                    style={{ backgroundColor: srmToHex(styleOfTheDay.srm) }}
+                  />
+                  <span className="text-xs font-bold text-[#ffd18f]">{styleOfTheDay.srmRange}</span>
+                </div>
+              </div>
+              <div className="border-l border-white/5">
+                <span className="text-[10px] text-[#9f8e79] block uppercase font-bold">EBC</span>
+                <span className="text-xs font-bold text-[#ffd18f]">{styleOfTheDay.ebcRange}</span>
+              </div>
+            </div>
+
+            {/* Description */}
+            <div className="space-y-1">
+              <strong className="text-xs font-bold text-[#ffd18f] uppercase tracking-wider block">
+                Descripción del Estilo
+              </strong>
+              <p className="text-sm text-[#e2e2e2] leading-relaxed bg-[#121414] p-3 rounded-xl border border-white/5">
+                {styleOfTheDay.description}
+              </p>
+            </div>
+
+            {/* Perfil de Sabor */}
+            <div className="space-y-1">
+              <strong className="text-xs font-bold text-[#ffd18f] uppercase tracking-wider flex items-center gap-1">
+                <span className="material-symbols-outlined text-sm text-[#fbad18]">psychology</span>
+                Perfil de Sabor & Aroma
+              </strong>
+              <p className="text-xs text-[#d7c4ad] bg-[#121414] p-3 rounded-xl border border-white/5 leading-relaxed">
+                {styleOfTheDay.flavorProfile}
+              </p>
+            </div>
+
+            {/* Maridaje Sugerido */}
+            <div className="space-y-1">
+              <strong className="text-xs font-bold text-[#ffd18f] uppercase tracking-wider flex items-center gap-1">
+                <span className="material-symbols-outlined text-sm text-[#fbad18]">restaurant</span>
+                Maridaje Sugerido
+              </strong>
+              <p className="text-xs text-[#d7c4ad] bg-[#121414] p-3 rounded-xl border border-white/5 leading-relaxed">
+                {styleOfTheDay.pairingSuggestions}
+              </p>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleShuffleDaily}
+                className="py-3 px-4 bg-[#333535] hover:bg-[#3e4040] text-[#e2e2e2] font-bold text-xs uppercase tracking-wider rounded-xl border border-white/10 transition-all flex items-center justify-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-base">casino</span>
+                <span>Aleatorio</span>
+              </button>
+              {onStartNewCataWithStyle && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const styleToPass = `${styleOfTheDay.code}. ${styleOfTheDay.name}`;
+                    setShowStyleOfTheDayModal(false);
+                    onStartNewCataWithStyle(styleToPass);
+                  }}
+                  className="flex-1 py-3 bg-[#fbad18] hover:bg-[#ffbe3b] text-[#684500] font-black text-xs uppercase tracking-wider rounded-xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
+                >
+                  <span className="material-symbols-outlined text-base">add_circle</span>
+                  <span>Catar Estilo</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

@@ -12,24 +12,37 @@ import { NuevaCataView } from './components/NuevaCataView';
 import { EstilosView } from './components/EstilosView';
 import { InsigniasView } from './components/InsigniasView';
 import { PerfilView } from './components/PerfilView';
+import { ImportarBaseDatosView } from './components/ImportarBaseDatosView';
 import { DetailModal } from './components/DetailModal';
 import { WalkthroughModal } from './components/WalkthroughModal';
 import { evaluarInsignias } from './utils/badgeEngine';
+import { useAuth } from './context/AuthContext';
+import { saveTastingToFirestore, deleteTastingFromFirestore, deleteAllUserTastingsFromFirestore } from './utils/firebase';
 import {
   initializeAndMigrateDatabase,
   saveTastingToDB,
+  saveAllTastingsToDB,
+  clearAllTastingsFromDB,
   deleteTastingFromDB,
   saveProfileToDB,
+  isDefaultSampleTasting,
 } from './utils/db';
 
 export default function App() {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<ActiveTab>('mis-catas');
 
-  // Local storage initial state as immediate synchronous buffer
+  // Local storage initial state as immediate synchronous buffer (filtering any default examples)
   const [tastings, setTastings] = useState<BeerTasting[]>(() => {
     try {
       const saved = localStorage.getItem('diario_cervecero_catas');
-      return saved ? JSON.parse(saved) : INITIAL_TASTINGS;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((t) => !isDefaultSampleTasting(t));
+        }
+      }
+      return INITIAL_TASTINGS;
     } catch {
       return INITIAL_TASTINGS;
     }
@@ -120,11 +133,11 @@ export default function App() {
 
     const updated = {
       ...userProfile,
-      title: latestBadge ? latestBadge.nombre : userProfile.title,
+      title: latestBadge ? latestBadge.nombre : (tastings.length === 0 ? 'Iniciado' : userProfile.title),
       stats: {
         ...userProfile.stats,
         totalCatas: tastings.length,
-        totalEstilos: uniqueStylesCount || 1,
+        totalEstilos: uniqueStylesCount,
       },
     };
 
@@ -154,6 +167,13 @@ export default function App() {
 
     // Save directly to IndexedDB (virtually unlimited quota for high-res photos)
     saveTastingToDB(cata).catch((e) => console.error('IndexedDB save error:', e));
+
+    // Auto-sync with Firestore if user is authenticated
+    if (user) {
+      saveTastingToFirestore(user.uid, cata).catch((e) =>
+        console.error('Firestore auto-save error:', e)
+      );
+    }
 
     // Fallback sync to localStorage (caught if storage quota exceeded)
     try {
@@ -189,6 +209,13 @@ export default function App() {
     // Remove from IndexedDB
     deleteTastingFromDB(id).catch((e) => console.error('IndexedDB delete error:', e));
 
+    // Remove from Firestore if user is authenticated
+    if (user) {
+      deleteTastingFromFirestore(user.uid, id).catch((e) =>
+        console.error('Firestore delete error:', e)
+      );
+    }
+
     if (selectedBeer?.id === id) {
       setSelectedBeer(null);
     }
@@ -206,6 +233,78 @@ export default function App() {
     setPrefilledStyle(styleName);
     setEditingBeer(null);
     setActiveTab('nueva-cata');
+  };
+
+  // Import Tastings from Database (.CSV or .JSON)
+  const handleImportTastings = async (importedTastings: BeerTasting[], mode: 'merge' | 'replace') => {
+    const prevBadges = evaluarInsignias(tastings);
+    const prevUnlockedIds = new Set(prevBadges.filter((b) => b.unlocked).map((b) => b.id));
+
+    let updatedTastings: BeerTasting[];
+    if (mode === 'replace') {
+      updatedTastings = [...importedTastings];
+      await clearAllTastingsFromDB();
+      await saveAllTastingsToDB(importedTastings);
+    } else {
+      updatedTastings = [...importedTastings, ...tastings];
+      await saveAllTastingsToDB(importedTastings);
+    }
+
+    setTastings(updatedTastings);
+
+    try {
+      localStorage.setItem('diario_cervecero_catas', JSON.stringify(updatedTastings));
+    } catch {}
+
+    // Check newly unlocked badges
+    const nextBadges = evaluarInsignias(updatedTastings);
+    const newlyUnlocked = nextBadges.filter((b) => b.unlocked && !prevUnlockedIds.has(b.id));
+
+    if (newlyUnlocked.length > 0) {
+      const names = newlyUnlocked.map((b) => `${b.icono} ${b.nombre}`).join(', ');
+      setToastMessage(`🎉 ¡${importedTastings.length} catas importadas! Nuevas insignias: ${names}`);
+    } else {
+      setToastMessage(`✓ ¡${importedTastings.length} catas importadas con éxito en tu diario!`);
+    }
+    setShowStatusToast(true);
+    setTimeout(() => setShowStatusToast(false), 5000);
+  };
+
+  // Clear all tastings from both Local (IndexedDB & LocalStorage) and Cloud (Firestore)
+  const handleClearAllData = async (): Promise<{ localCount: number; cloudCount: number }> => {
+    const localCount = tastings.length;
+    let cloudCount = 0;
+
+    // 1. Delete all tastings from Firestore if authenticated
+    if (user) {
+      try {
+        const res = await deleteAllUserTastingsFromFirestore(user.uid);
+        if (res && typeof res.count === 'number') {
+          cloudCount = res.count;
+        }
+      } catch (err) {
+        console.error('Error al vaciar catas en Firestore:', err);
+      }
+    }
+
+    // 2. Clear IndexedDB
+    await clearAllTastingsFromDB();
+
+    // 3. Clear LocalStorage
+    try {
+      localStorage.removeItem('diario_cervecero_catas');
+    } catch {}
+
+    // 4. Update React State
+    setTastings([]);
+    setSelectedBeer(null);
+    setEditingBeer(null);
+
+    setToastMessage('✓ Todas las bases de datos (local y nube) se han eliminado correctamente.');
+    setShowStatusToast(true);
+    setTimeout(() => setShowStatusToast(false), 5000);
+
+    return { localCount, cloudCount };
   };
 
   return (
@@ -274,8 +373,12 @@ export default function App() {
                     ibu: 40,
                     ebc: 12,
                     srm: 4,
-                    clarity: 'Brillante',
-                    foamType: 'Persistente',
+                    clarity: 'Cristalina',
+                    brillante: 'Brillante',
+                    foamType: 'Cremosa',
+                    foamColor: 'Blanca',
+                    foamAdherence: ['Media'],
+                    foamPersistence: 'Media',
                     carbonation: 'Media',
                     radarValues: { hop: 4, malt: 2, bitterness: 3, sweetness: 2 },
                     aromaDescriptors: ['Amargo'],
@@ -292,7 +395,10 @@ export default function App() {
         )}
 
         {activeTab === 'estilos' && (
-          <EstilosView onStartNewCataWithStyle={handleStartNewCataWithStyle} />
+          <EstilosView
+            onStartNewCataWithStyle={handleStartNewCataWithStyle}
+            onNavigate={setActiveTab}
+          />
         )}
 
         {activeTab === 'insignias' && (
@@ -312,7 +418,9 @@ export default function App() {
             onUpdateProfile={setUserProfile}
             onNavigate={setActiveTab}
             onOpenWalkthrough={() => setIsWalkthroughOpen(true)}
-            onExportNotion={() => {
+            onImportTastings={handleImportTastings}
+            onClearAllData={handleClearAllData}
+            onExportBackupJson={() => {
               const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(tastings, null, 2));
               const downloadAnchor = document.createElement('a');
               downloadAnchor.setAttribute('href', dataStr);
@@ -320,6 +428,19 @@ export default function App() {
               document.body.appendChild(downloadAnchor);
               downloadAnchor.click();
               downloadAnchor.remove();
+            }}
+          />
+        )}
+
+        {activeTab === 'importar-bd' && (
+          <ImportarBaseDatosView
+            onNavigate={setActiveTab}
+            existingTastings={tastings}
+            onTastingsUpdated={(updated) => setTastings(updated)}
+            onShowToast={(msg) => {
+              setToastMessage(msg);
+              setShowStatusToast(true);
+              setTimeout(() => setShowStatusToast(false), 5000);
             }}
           />
         )}
